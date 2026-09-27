@@ -1,0 +1,1 @@
+"""Slack Support Assistant application."""
