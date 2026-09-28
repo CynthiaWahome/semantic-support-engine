@@ -6,6 +6,7 @@ from app.main import create_app
 
 
 def test_health_returns_ok_without_external_services():
+    """Keep liveness available without credentials or external providers."""
     with TestClient(create_app()) as client:
         response = client.get("/health")
 
@@ -14,6 +15,7 @@ def test_health_returns_ok_without_external_services():
 
 
 def test_health_is_registered_in_openapi():
+    """Expose the public health response contract in generated API metadata."""
     with TestClient(create_app()) as client:
         response = client.get("/openapi.json")
 

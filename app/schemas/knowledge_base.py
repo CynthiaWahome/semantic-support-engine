@@ -24,6 +24,15 @@ class AnswerResponse(BaseModel):
     source: Literal["knowledge_base", "fallback"]
 
 
+class SyncRowError(BaseModel):
+    """Locate invalid input without returning private cell contents."""
+
+    tab: str
+    row: int
+    reason: str
+
+
 class SyncResult(BaseModel):
     success: bool
     topics_written: int = 0
+    errors: list[SyncRowError] = Field(default_factory=list)
