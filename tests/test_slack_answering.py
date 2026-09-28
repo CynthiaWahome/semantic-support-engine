@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.integrations.slack import answer_slack_event
 from app.schemas.knowledge_base import KnowledgeTopic
 from app.services.knowledge_base import KnowledgeBaseService
@@ -71,6 +73,21 @@ def test_mention_replies_in_the_existing_thread():
     client.chat_postMessage.assert_called_once_with(
         channel="C123", text="Use the account portal.", thread_ts="200.100"
     )
+
+
+def test_mention_only_event_without_bot_id_is_ignored():
+    client = MagicMock()
+    event = {
+        "type": "app_mention",
+        "event_id": "Ev2-only",
+        "channel": "C123",
+        "user": "U123",
+        "text": "<@UBOT>",
+        "ts": "200.400",
+    }
+
+    assert answer_slack_event(event, client, service(bot_user_id=None)) is None
+    client.chat_postMessage.assert_not_called()
 
 
 def test_duplicate_event_is_not_posted_twice():
@@ -159,10 +176,33 @@ def test_failed_delivery_releases_event_claim():
         "ts": "800.900",
     }
 
-    try:
+    with pytest.raises(RuntimeError, match="temporary Slack failure"):
         answer_slack_event(event, client, answering)
-    except RuntimeError:
-        pass
 
     assert answer_slack_event(event, client, answering) is not None
     assert client.chat_postMessage.call_count == 2
+
+
+def test_failed_answer_releases_event_claim():
+    client = MagicMock()
+    answering = service()
+    event = {
+        "type": "app_mention",
+        "event_id": "Ev9",
+        "channel": "C123",
+        "user": "U123",
+        "text": "<@UBOT> access",
+        "ts": "900.100",
+    }
+    answering.knowledge_base.answer = MagicMock(
+        side_effect=[
+            RuntimeError("temporary KB failure"),
+            MagicMock(answer="Use the account portal."),
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="temporary KB failure"):
+        answering.answer_event(event)
+
+    assert answering.answer_event(event) is not None
+    client.chat_postMessage.assert_not_called()

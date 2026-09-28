@@ -1,5 +1,6 @@
 """Slack-independent answering and duplicate-event protection."""
 
+import re
 import time
 from collections.abc import Mapping
 from threading import Lock
@@ -54,7 +55,7 @@ class InMemoryDuplicateEventStore:
 def _strip_mention(text: str, bot_user_id: str | None) -> str:
     """Remove the bot's Slack mention from a question."""
     if not bot_user_id:
-        return text.strip()
+        return re.sub(r"^<@[^>]+>\s*", "", text, count=1).strip()
     return text.replace(f"<@{bot_user_id}>", " ").strip()
 
 
@@ -121,7 +122,11 @@ class SlackAnsweringService:
         question = _normalize_question(event, self.bot_user_id)
         if question is None or not self.duplicate_events.claim(question.event_key):
             return None
-        answer = self.knowledge_base.answer(question.question)
+        try:
+            answer = self.knowledge_base.answer(question.question)
+        except Exception:
+            self.duplicate_events.release(question.event_key)
+            raise
         return SlackReply(
             channel=question.channel,
             text=answer.answer,

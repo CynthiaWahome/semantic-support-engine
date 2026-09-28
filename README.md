@@ -102,9 +102,11 @@ entities, not HTTP schemas. Register new HTTP routers in `routes/router.py`.
 
 `SlackAnsweringService` accepts Slack `message` and `app_mention` events. It
 answers direct messages and messages that mention the bot, then sends the answer
-with the original message timestamp as `thread_ts`. Repeated deliveries are
-claimed by event ID and ignored within the duplicate-event TTL; when Slack does
-not provide an event ID, the adapter uses the message identity as a fallback.
+with the original message timestamp as `thread_ts`. When its caller supplies an
+`event_id`, repeated deliveries are claimed by that ID and ignored within the
+duplicate-event TTL. The Slack Bolt adapter currently passes the inner event
+payload, so Bolt deliveries use the message identity (`channel`, `ts`, `user`,
+and `text`) for deduplication.
 
 `create_slack_app` registers the narrow Slack Bolt event surface for this
 feature. Authentication and process transport are deployment concerns: provide
