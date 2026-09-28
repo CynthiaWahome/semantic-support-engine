@@ -27,14 +27,29 @@ The scaffold requires no Slack account, credentials, or external service.
 ```text
 app/
   main.py                 Application factory and entry point
-  api/routes/health.py    Liveness endpoint
+  views/                  HTTP handlers and central router
+  services/               Business logic shared across interfaces
+  schemas/                Pydantic request and response contracts
+  models/                 Database entities and persistence mappings
+  repositories/           Database queries and persistence access
+  integrations/           External adapters: Slack, Sheets, embeddings
+  core/                   Shared configuration, logging, lifecycle
 tests/
   test_health.py          HTTP contract test
 .github/
   PULL_REQUEST_TEMPLATE.md
 ```
 
-Feature modules will be introduced as the corresponding features are migrated.
+The HTTP flow is `views → services → repositories/integrations`. Views use
+schemas to validate input and serialize output; repositories use database
+models for persistence. Services do not depend on HTTP requests or Slack event
+objects, allowing the same feature logic to serve both interfaces.
+
+The liveness endpoint demonstrates `views/health.py → services/health.py`, with
+its response contract in `schemas/health.py`. The persistence, integrations, and
+core packages currently establish boundaries only; concrete implementations
+will arrive with the corresponding features. No database or ORM is configured
+yet. Register new HTTP routers in `views/router.py`.
 
 ## Verification
 
