@@ -15,17 +15,29 @@ RetrySleep = Callable[[float], None]
 class SlackHistoryClient(Protocol):
     """Minimal Slack WebClient surface needed by the scraper."""
 
-    def auth_test(self) -> Any: ...
+    def auth_test(self) -> Any:
+        """Return the authenticated bot identity."""
+        ...
 
-    def conversations_list(self, **kwargs: Any) -> Any: ...
+    def conversations_list(self, **kwargs: Any) -> Any:
+        """Return one page of visible channels."""
+        ...
 
-    def conversations_history(self, **kwargs: Any) -> Any: ...
+    def conversations_history(self, **kwargs: Any) -> Any:
+        """Return one page of channel messages."""
+        ...
 
-    def conversations_replies(self, **kwargs: Any) -> Any: ...
+    def conversations_replies(self, **kwargs: Any) -> Any:
+        """Return one page of thread messages."""
+        ...
 
-    def conversations_members(self, **kwargs: Any) -> Any: ...
+    def conversations_members(self, **kwargs: Any) -> Any:
+        """Return one page of channel members."""
+        ...
 
-    def users_info(self, **kwargs: Any) -> Any: ...
+    def users_info(self, **kwargs: Any) -> Any:
+        """Return profile data for one user."""
+        ...
 
 
 def safe_api_call(
@@ -68,6 +80,7 @@ class SlackHistoryReader:
         page_size: int = 200,
         sleeper: RetrySleep = time.sleep,
     ) -> None:
+        """Configure a Slack client and the page-level retry delay."""
         if not 1 <= page_size <= 200:
             raise ValueError("page_size must be between 1 and 200")
         self.client = client
@@ -75,6 +88,7 @@ class SlackHistoryReader:
         self.sleeper = sleeper
 
     def _call(self, function: Callable[..., Any], **kwargs: Any) -> Any:
+        """Call one Slack method through the bounded retry wrapper."""
         return safe_api_call(function, **kwargs, sleeper=self.sleeper)
 
     def fetch_bot_user_id(self) -> str:
@@ -85,6 +99,7 @@ class SlackHistoryReader:
         """List visible channels, retaining archived channels for filtering."""
         channels: list[dict[str, Any]] = []
         cursor: str | None = None
+        seen_cursors: set[str] = set()
         while True:
             response = self._call(
                 self.client.conversations_list,
@@ -97,12 +112,16 @@ class SlackHistoryReader:
             cursor = response.get("response_metadata", {}).get("next_cursor")
             if not cursor:
                 return channels
+            if cursor in seen_cursors:
+                raise RuntimeError("Slack pagination returned a repeated cursor")
+            seen_cursors.add(cursor)
             self.sleeper(0.5)
 
     def fetch_channel_messages(self, channel_id: str) -> list[dict[str, Any]]:
         """Fetch every message in a channel."""
         messages: list[dict[str, Any]] = []
         cursor: str | None = None
+        seen_cursors: set[str] = set()
         while True:
             response = self._call(
                 self.client.conversations_history,
@@ -114,6 +133,9 @@ class SlackHistoryReader:
             cursor = response.get("response_metadata", {}).get("next_cursor")
             if not cursor:
                 return messages
+            if cursor in seen_cursors:
+                raise RuntimeError("Slack pagination returned a repeated cursor")
+            seen_cursors.add(cursor)
             self.sleeper(1.0)
 
     def fetch_thread_replies(
@@ -122,6 +144,7 @@ class SlackHistoryReader:
         """Fetch replies while excluding the root on every page."""
         replies: list[dict[str, Any]] = []
         cursor: str | None = None
+        seen_cursors: set[str] = set()
         while True:
             response = self._call(
                 self.client.conversations_replies,
@@ -138,12 +161,16 @@ class SlackHistoryReader:
             cursor = response.get("response_metadata", {}).get("next_cursor")
             if not cursor:
                 return replies
+            if cursor in seen_cursors:
+                raise RuntimeError("Slack pagination returned a repeated cursor")
+            seen_cursors.add(cursor)
             self.sleeper(0.5)
 
     def fetch_channel_members(self, channel_id: str) -> set[str]:
         """Fetch every member of a trusted-users channel."""
         members: set[str] = set()
         cursor: str | None = None
+        seen_cursors: set[str] = set()
         while True:
             response = self._call(
                 self.client.conversations_members,
@@ -155,6 +182,9 @@ class SlackHistoryReader:
             cursor = response.get("response_metadata", {}).get("next_cursor")
             if not cursor:
                 return members
+            if cursor in seen_cursors:
+                raise RuntimeError("Slack pagination returned a repeated cursor")
+            seen_cursors.add(cursor)
             self.sleeper(0.5)
 
     def get_username(self, user_id: str) -> str:

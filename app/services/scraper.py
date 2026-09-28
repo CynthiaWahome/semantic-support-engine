@@ -76,13 +76,27 @@ DEFAULT_QUESTION_STARTERS = (
 class HistoryReader(Protocol):
     """Reader boundary allowing the service to run without Slack."""
 
-    def list_channels(self) -> list[dict[str, Any]]: ...
-    def fetch_channel_messages(self, channel_id: str) -> list[dict[str, Any]]: ...
+    def list_channels(self) -> list[dict[str, Any]]:
+        """Return channel metadata visible to the reader."""
+        ...
+
+    def fetch_channel_messages(self, channel_id: str) -> list[dict[str, Any]]:
+        """Return all messages for one channel."""
+        ...
+
     def fetch_thread_replies(
         self, channel_id: str, thread_ts: str
-    ) -> list[dict[str, Any]]: ...
-    def fetch_channel_members(self, channel_id: str) -> set[str]: ...
-    def get_username(self, user_id: str) -> str: ...
+    ) -> list[dict[str, Any]]:
+        """Return replies for one thread without its root message."""
+        ...
+
+    def fetch_channel_members(self, channel_id: str) -> set[str]:
+        """Return user IDs in one trusted-users channel."""
+        ...
+
+    def get_username(self, user_id: str) -> str:
+        """Return a display name for one Slack user ID."""
+        ...
 
 
 class SlackQAScraper:
@@ -97,6 +111,7 @@ class SlackQAScraper:
         min_answer_length: int = 30,
         bot_user_id: str | None = None,
     ) -> None:
+        """Configure channel policy, scoring thresholds, and bot exclusion."""
         if min_answer_length < 1:
             raise ValueError("min_answer_length must be positive")
         self.reader = reader
@@ -135,9 +150,9 @@ class SlackQAScraper:
     def load_mentor_ids(self, channels: dict[str, str]) -> set[str]:
         """Load trusted answerers when the configured channel is accessible."""
         channel_id = channels.get(self.mentors_channel)
-        self.mentor_ids = (
-            self.reader.fetch_channel_members(channel_id) if channel_id else set()
-        )
+        self.mentor_ids = set()
+        if channel_id:
+            self.mentor_ids = self.reader.fetch_channel_members(channel_id)
         return self.mentor_ids
 
     @staticmethod
@@ -174,6 +189,7 @@ class SlackQAScraper:
         return min(score, 1.0)
 
     def _username(self, user_id: str) -> str:
+        """Resolve and cache a display name for one user ID."""
         if user_id not in self._user_cache:
             self._user_cache[user_id] = self.reader.get_username(user_id)
         return self._user_cache[user_id]
