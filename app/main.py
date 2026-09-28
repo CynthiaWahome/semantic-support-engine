@@ -2,14 +2,14 @@
 
 from fastapi import FastAPI
 
-from app.views.router import router
+from app.routes.router import router
 
 
 def create_app() -> FastAPI:
     application = FastAPI(
         title="Slack Support Assistant",
         version="0.1.0",
-        description="Standalone support assistant — scaffold baseline.",
+        description="Standalone spreadsheet-backed support assistant.",
     )
     application.include_router(router)
     return application

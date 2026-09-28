@@ -1,4 +1,4 @@
-"""Application liveness HTTP view."""
+"""Application liveness HTTP route."""
 
 from fastapi import APIRouter
 
