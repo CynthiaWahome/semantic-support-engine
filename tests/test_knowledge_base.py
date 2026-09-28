@@ -220,6 +220,51 @@ def test_google_adapter_quotes_tab_names_and_maps_columns():
     )
 
 
+def test_google_environment_requires_both_nonsecret_settings(monkeypatch):
+    """Fail clearly before authentication when spreadsheet settings are incomplete."""
+    monkeypatch.delenv("GOOGLE_SPREADSHEET_ID", raising=False)
+    monkeypatch.setenv(
+        "GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/service-account.json"
+    )
+    with pytest.raises(ValueError, match="GOOGLE_SPREADSHEET_ID"):
+        GoogleSheetsReader.from_environment()
+
+
+def test_google_environment_factory_uses_read_only_scope(monkeypatch):
+    """Pass the configured file and read-only scope to the Google client factory."""
+    monkeypatch.setenv("GOOGLE_SPREADSHEET_ID", "sheet-id")
+    monkeypatch.setenv(
+        "GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/service-account.json"
+    )
+    credentials = object()
+    service = object()
+    calls = {}
+
+    def fake_credentials(path, scopes):
+        calls["credentials"] = (path, scopes)
+        return credentials
+
+    def fake_build(*args, **kwargs):
+        calls["build"] = (args, kwargs)
+        return service
+
+    monkeypatch.setattr(
+        "app.integrations.spreadsheet.service_account.Credentials.from_service_account_file",
+        fake_credentials,
+    )
+    monkeypatch.setattr("app.integrations.spreadsheet.build", fake_build)
+    reader = GoogleSheetsReader.from_environment()
+    assert reader.service is service
+    assert calls["credentials"] == (
+        "credentials/service-account.json",
+        ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    )
+    assert calls["build"] == (
+        ("sheets", "v4"),
+        {"credentials": credentials, "cache_discovery": False},
+    )
+
+
 def test_csv_import_to_http_answer_and_fallback(tmp_path, repository, monkeypatch):
     """Serve imported answers, fallbacks and validation errors to an authorized caller."""
     monkeypatch.setenv("KB_API_KEY", "synthetic-test-key")

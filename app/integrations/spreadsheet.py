@@ -1,8 +1,12 @@
 """Read-only spreadsheet adapters; authentication is owned by the caller."""
 
 import csv
+import os
 from pathlib import Path
 from typing import Any, Protocol
+
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 COLUMNS = ("topic", "keywords", "answer", "enabled", "priority")
 
@@ -42,6 +46,29 @@ class GoogleSheetsReader:
             raise ValueError("Spreadsheet ID is required")
         self.service = service
         self.spreadsheet_id = spreadsheet_id
+
+    @classmethod
+    def from_service_account_file(
+        cls, credentials_file: Path, spreadsheet_id: str
+    ) -> "GoogleSheetsReader":
+        """Build a read-only client from a caller-supplied service-account file."""
+        credentials = service_account.Credentials.from_service_account_file(
+            str(credentials_file),
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+        )
+        service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
+        return cls(service, spreadsheet_id)
+
+    @classmethod
+    def from_environment(cls) -> "GoogleSheetsReader":
+        """Create a read-only client from process configuration without logging it."""
+        spreadsheet_id = os.environ.get("GOOGLE_SPREADSHEET_ID", "").strip()
+        credentials_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+        if not spreadsheet_id or not credentials_file:
+            raise ValueError(
+                "GOOGLE_SPREADSHEET_ID and GOOGLE_SERVICE_ACCOUNT_FILE are required"
+            )
+        return cls.from_service_account_file(Path(credentials_file), spreadsheet_id)
 
     def get_tab_names(self) -> list[str]:
         """Fetch sheet titles using only the required metadata fields."""

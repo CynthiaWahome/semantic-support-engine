@@ -54,8 +54,10 @@ The complete current application configuration is:
 | `KB_API_KEY` | Shared secret required for HTTP question answering | Unset; answering returns 503 |
 | `KB_STORAGE_PATH` | JSON snapshot path shared by the server and importer | `data/kb_topics.json` |
 
-Only these two variables are currently consumed. Google Sheets credentials and
-Slack configuration will be documented when their runtime wiring is implemented.
+The Google Sheets sync consumes `GOOGLE_SPREADSHEET_ID`,
+`GOOGLE_SERVICE_ACCOUNT_FILE` and `GOOGLE_SHEET_TABS` when invoked with
+`--google`. Slack configuration will be documented when Slack runtime wiring is
+implemented.
 Production may inject these variables directly and omit `--env-file`. Local
 `.env` files, credentials, data, notes and the roadmap are ignored; only the
 root `.env.example` template is intended for version control. Ignore rules do
@@ -154,6 +156,21 @@ an ordered list of tab names, then call `sync()`. Columns A:E use the same five
 fields; row 1 is a header. Without a tab selection, it reads `Sheet1`. Any missing
 requested tab or read failure prevents replacement of the previous snapshot.
 The adapter is tested with a fake provider, not a live Google account.
+
+To synchronize directly from Google Sheets, create a Google Cloud service
+account, grant its email read access to the spreadsheet, and place its JSON key
+at the ignored path in `GOOGLE_SERVICE_ACCOUNT_FILE`. Set the spreadsheet ID and
+optional comma-separated tab names, then run:
+
+```sh
+uv run --env-file .env --no-sync python -m app.sync_kb --google
+```
+
+The adapter requests the read-only Sheets scope, reads columns A:E after the
+header, and publishes only a successful validated snapshot. It does not create,
+edit or delete spreadsheet content. The service-account JSON is never committed;
+do not paste it into chat or public repositories. This is an explicit sync
+command, not a background scheduler yet.
 
 JSON replacement is atomic, but concurrent imports are last-writer-wins; run
 one importer at a time. This is a local single-instance baseline, not a shared

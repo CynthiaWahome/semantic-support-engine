@@ -29,9 +29,24 @@ def test_example_documents_every_application_environment_variable():
                 and ast.unparse(node.value) == "os.environ"
             ):
                 consumed.add(ast.literal_eval(node.slice))
-    assert consumed == set(documented) == {"KB_API_KEY", "KB_STORAGE_PATH"}
+    assert (
+        consumed
+        == set(documented)
+        == {
+            "KB_API_KEY",
+            "KB_STORAGE_PATH",
+            "GOOGLE_SPREADSHEET_ID",
+            "GOOGLE_SERVICE_ACCOUNT_FILE",
+            "GOOGLE_SHEET_TABS",
+        }
+    )
     assert documented["KB_API_KEY"] == ""
     assert documented["KB_STORAGE_PATH"] == "data/kb_topics.json"
+    assert documented["GOOGLE_SPREADSHEET_ID"] == ""
+    assert (
+        documented["GOOGLE_SERVICE_ACCOUNT_FILE"] == "credentials/service-account.json"
+    )
+    assert documented["GOOGLE_SHEET_TABS"] == "Sheet1"
 
 
 @pytest.fixture
