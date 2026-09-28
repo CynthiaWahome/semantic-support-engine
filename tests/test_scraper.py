@@ -129,6 +129,37 @@ def test_process_channel_ignores_bot_subtypes_and_unanswered_threads():
     assert scraper.process_channel("support-general", "C1") == []
 
 
+def test_extract_best_answer_ignores_bot_replies():
+    """Do not score bot replies as trusted human answers."""
+    reader = FakeReader()
+    scraper = SlackQAScraper(reader, bot_user_id="U_CONFIGURED_BOT")
+    scraper.mentor_ids = {"U_MENTOR"}
+    replies = [
+        {
+            "user": "U_MENTOR",
+            "text": "Automated guidance that should not become a trusted answer.",
+            "subtype": "bot_message",
+        },
+        {
+            "user": "U_OTHER_BOT",
+            "bot_id": "B123",
+            "text": "Another automated response that should be ignored too.",
+        },
+        {
+            "user": "U_HUMAN",
+            "text": "A human answer with enough detail to be selected for the dataset.",
+        },
+    ]
+
+    pair = scraper.extract_best_answer(
+        "support-general", "How do I deploy?", "1700000000.000000", "U_ASKER", replies
+    )
+
+    assert pair is not None
+    assert pair.answer.startswith("A human answer")
+    assert not pair.is_trusted_answer
+
+
 def test_safe_api_call_retries_rate_limits():
     """Retry a rate-limited call using Slack's retry-after value."""
     function = MagicMock(

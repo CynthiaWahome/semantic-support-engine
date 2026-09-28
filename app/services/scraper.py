@@ -209,7 +209,9 @@ class SlackQAScraper:
             answerer_id = reply.get("user")
             answer_text = str(reply.get("text", ""))
             if (
-                not answerer_id
+                reply.get("subtype") == "bot_message"
+                or reply.get("bot_id")
+                or not answerer_id
                 or len(answer_text) < self.min_answer_length
                 or answerer_id in {asker_id, self.bot_user_id}
             ):
