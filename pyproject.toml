@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.115,<1",
     "google-api-python-client>=2.166,<3",
     "google-auth>=2.38,<3",
+    "slack-sdk>=3.27,<4",
     "uvicorn>=0.34,<1",
 ]
 
