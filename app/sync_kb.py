@@ -23,7 +23,7 @@ def main() -> int:
     if args.google:
         try:
             spreadsheet = GoogleSheetsReader.from_environment()
-        except ValueError:
+        except (OSError, ValueError):
             result = SyncResult(
                 success=False,
                 errors=[
@@ -36,7 +36,7 @@ def main() -> int:
             )
             print(result.model_dump_json())
             return 1
-        configured_tabs = os.environ.get("GOOGLE_SHEET_TABS", "")
+        configured_tabs = os.environ.get("GOOGLE_SHEET_TABS", "Sheet1")
         tabs = [tab.strip() for tab in configured_tabs.split(",") if tab.strip()]
     else:
         spreadsheet = CSVSpreadsheetReader(args.csv)

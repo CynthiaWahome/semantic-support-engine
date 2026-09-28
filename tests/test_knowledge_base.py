@@ -3,7 +3,7 @@
 import json
 import subprocess
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -248,6 +248,23 @@ def test_google_cli_missing_configuration_returns_safe_json(monkeypatch, capsys)
             }
         ],
     }
+
+
+def test_google_cli_unreadable_credentials_returns_safe_json(monkeypatch, capsys):
+    """Return the same safe contract when the configured credential file is unreadable."""
+    monkeypatch.setenv("GOOGLE_SPREADSHEET_ID", "sheet-id")
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/missing.json")
+    monkeypatch.setattr(
+        "app.integrations.spreadsheet.GoogleSheetsReader.from_environment",
+        Mock(side_effect=OSError("credential contents must not be returned")),
+    )
+    monkeypatch.setattr("sys.argv", ["sync_kb", "--google"])
+    assert sync_kb_main() == 1
+    output = capsys.readouterr().out
+    assert "credential contents" not in output
+    assert json.loads(output)["errors"][0]["reason"] == (
+        "Google Sheets configuration is incomplete"
+    )
 
 
 def test_google_environment_factory_uses_read_only_scope(monkeypatch):

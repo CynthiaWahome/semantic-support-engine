@@ -12,22 +12,69 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_example_documents_every_application_environment_variable():
     """Compare source-level configuration reads with the approved empty-secret template."""
     documented = {}
-    for line in (ROOT / ".env.example").read_text().splitlines():
+    for line_number, line in enumerate(
+        (ROOT / ".env.example").read_text().splitlines(), 1
+    ):
         if line.strip() and not line.lstrip().startswith("#"):
             key, value = line.split("=", 1)
-            documented[key.strip()] = value.strip()
+            key = key.strip()
+            if key in documented:
+                raise AssertionError(
+                    f"duplicate configuration key on line {line_number}: {key}"
+                )
+            documented[key] = value.strip()
     consumed = set()
+    defaults = {}
     for path in (ROOT / "app").rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
-            if isinstance(node, ast.Call) and ast.unparse(node.func) in {
-                "os.environ.get",
-                "os.getenv",
-            }:
-                consumed.add(ast.literal_eval(node.args[0]))
-            elif (
-                isinstance(node, ast.Subscript)
-                and ast.unparse(node.value) == "os.environ"
-            ):
+        tree = ast.parse(path.read_text())
+        os_names = set()
+        getenv_names = set()
+        environ_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "os":
+                        os_names.add(alias.asname or "os")
+            elif isinstance(node, ast.ImportFrom) and node.module == "os":
+                for alias in node.names:
+                    if alias.name == "getenv":
+                        getenv_names.add(alias.asname or "getenv")
+                    elif alias.name == "environ":
+                        environ_names.add(alias.asname or "environ")
+
+        def is_environ(value, *, aliases=environ_names, imported_os=os_names):
+            """Recognize direct and aliased os.environ expressions."""
+            return (isinstance(value, ast.Name) and value.id in aliases) or (
+                isinstance(value, ast.Attribute)
+                and value.attr == "environ"
+                and isinstance(value.value, ast.Name)
+                and value.value.id in imported_os
+            )
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                function = node.func
+                is_getenv = (
+                    (isinstance(function, ast.Name) and function.id in getenv_names)
+                    or (
+                        isinstance(function, ast.Attribute)
+                        and function.attr == "getenv"
+                        and isinstance(function.value, ast.Name)
+                        and function.value.id in os_names
+                    )
+                    or (
+                        isinstance(function, ast.Attribute)
+                        and function.attr == "get"
+                        and is_environ(function.value)
+                    )
+                )
+                if not is_getenv:
+                    continue
+                key = ast.literal_eval(node.args[0])
+                consumed.add(key)
+                if len(node.args) > 1:
+                    defaults[key] = ast.literal_eval(node.args[1])
+            elif isinstance(node, ast.Subscript) and is_environ(node.value):
                 consumed.add(ast.literal_eval(node.slice))
     assert (
         consumed
@@ -47,6 +94,13 @@ def test_example_documents_every_application_environment_variable():
         documented["GOOGLE_SERVICE_ACCOUNT_FILE"] == "credentials/service-account.json"
     )
     assert documented["GOOGLE_SHEET_TABS"] == "Sheet1"
+    assert defaults == {
+        "KB_API_KEY": "",
+        "KB_STORAGE_PATH": "data/kb_topics.json",
+        "GOOGLE_SPREADSHEET_ID": "",
+        "GOOGLE_SERVICE_ACCOUNT_FILE": "",
+        "GOOGLE_SHEET_TABS": "Sheet1",
+    }
 
 
 @pytest.fixture
