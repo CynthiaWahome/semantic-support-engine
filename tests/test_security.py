@@ -51,7 +51,7 @@ def test_invalid_credentials_never_reach_answer_service(protected_client, header
     service.answer.assert_not_called()
 
 
-@pytest.mark.parametrize("configured", [None, "", " ", " key", "key "])
+@pytest.mark.parametrize("configured", [None, "", " ", " key", "key ", "clé"])
 def test_unconfigured_authentication_fails_closed(
     protected_client, monkeypatch, configured
 ):

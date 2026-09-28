@@ -11,25 +11,61 @@ messaging, Q&A ingestion, semantic retrieval, and onboarding are not yet migrate
 
 ## Run locally
 
-Requires Python 3.13+ and uv. From this repository directory:
+Requires Python 3.13+ and uv. From this repository directory, install dependencies
+and create your own local configuration. The copy command will not overwrite an
+existing `.env`:
 
 ```sh
 uv sync --locked
-uv run --no-sync uvicorn app.main:app --reload
+cp -n .env.example .env
+```
+
+Set `KB_API_KEY` in your local `.env` to a strong random secret. You can generate
+one locally with the command below; keep its output private, paste it into your
+local file, and never commit or share it:
+
+Use an ASCII-safe token, such as the `secrets.token_urlsafe` output below. The
+application rejects non-ASCII API-key configuration so HTTP header decoding is
+unambiguous.
+
+```sh
+uv run --no-sync python -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+Start the server with explicit environment-file loading:
+
+```sh
+uv run --env-file .env --no-sync uvicorn app.main:app --reload
 ```
 
 `uv sync` installs dependencies into the project's `.venv`. The server runs at
 `http://127.0.0.1:8000`; interactive API documentation is available at `/docs`.
 `GET /health` returns `{"status":"ok"}` and checks application liveness only.
-Local question answering requires no Slack account or external service. Configure
-`KB_API_KEY` securely in the server process environment before starting it. Use
-a strong random key; do not commit it or place it in URLs. The application does
-not load `.env` files. In `/docs`, select **Authorize**, enter the same key, then
+Local question answering requires no Slack account or external service. `uv`
+loads the specified file into the child process; the application itself does not
+load `.env` files. Existing process environment values take precedence, so use
+one configuration source consistently. In `/docs`, select **Authorize**, enter the same key, then
 try the answer endpoint. Clients must send it in the `X-API-Key` header.
 
 Missing or incorrect client keys return `401`. Missing, blank or whitespace-padded
 server configuration returns `503` without accessing answers. `/health`, `/docs`
 and `/openapi.json` remain public. This intentionally replaces anonymous answering.
+
+The complete current application configuration is:
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `KB_API_KEY` | Shared secret required for HTTP question answering | Unset; answering returns 503 |
+| `KB_STORAGE_PATH` | JSON snapshot path shared by the server and importer | `data/kb_topics.json` |
+
+The Google Sheets sync consumes `GOOGLE_SPREADSHEET_ID`,
+`GOOGLE_SERVICE_ACCOUNT_FILE` and `GOOGLE_SHEET_TABS` when invoked with
+`--google`. Slack configuration will be documented when Slack runtime wiring is
+implemented.
+Production may inject these variables directly and omit `--env-file`. Local
+`.env` files, credentials, data, notes and the roadmap are ignored; only the
+root `.env.example` template is intended for version control. Ignore rules do
+not protect files already tracked or files deliberately added with `git add -f`.
 
 ## Structure
 
@@ -73,13 +109,18 @@ account_access,"login,sign in",Use your account portal.,TRUE,10
 Import your local export, then start the server using the command above:
 
 ```sh
-uv run --no-sync python -m app.sync_kb data/faq.csv
+uv run --env-file .env --no-sync python -m app.sync_kb data/faq.csv
 ```
 
 The import writes `data/kb_topics.json`; set `KB_STORAGE_PATH` in your process
 environment to override that path for both importer and server. Relative paths
-resolve from the working directory. No `.env` or credential files are loaded.
+resolve from the working directory. Use the same environment file for the importer
+and server so both select the same snapshot. No Google credential file is loaded.
 Keep source exports and generated storage in ignored `data/`, never in commits.
+
+For a shell where you have separately exported `KB_API_KEY`, the HTTP request is
+shown below. `uv --env-file` does not export values back into your parent shell;
+otherwise, use `/docs` and its **Authorize** dialog to test the endpoint.
 
 ```sh
 curl -X POST http://127.0.0.1:8000/knowledge-base/answer \
@@ -119,6 +160,22 @@ an ordered list of tab names, then call `sync()`. Columns A:E use the same five
 fields; row 1 is a header. Without a tab selection, it reads `Sheet1`. Any missing
 requested tab or read failure prevents replacement of the previous snapshot.
 The adapter is tested with a fake provider, not a live Google account.
+
+To synchronize directly from Google Sheets, create a Google Cloud service
+account, grant its email read access to the spreadsheet, and place its JSON key
+under the ignored `credentials/` directory at the path in
+`GOOGLE_SERVICE_ACCOUNT_FILE`. Set the spreadsheet ID and
+optional comma-separated tab names, then run:
+
+```sh
+uv run --env-file .env --no-sync python -m app.sync_kb --google
+```
+
+The adapter requests the read-only Sheets scope, reads columns A:E after the
+header, and publishes only a successful validated snapshot. It does not create,
+edit or delete spreadsheet content. The service-account JSON is never committed;
+do not paste it into chat or public repositories. This is an explicit sync
+command, not a background scheduler yet.
 
 JSON replacement is atomic, but concurrent imports are last-writer-wins; run
 one importer at a time. This is a local single-instance baseline, not a shared

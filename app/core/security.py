@@ -17,10 +17,10 @@ def require_api_key(
     """Reject unconfigured servers and missing, ambiguous or incorrect keys.
 
     Read process configuration only; never load credential files or log keys.
-    Compare exact UTF-8 bytes so non-ASCII input cannot cause comparison errors.
+    API keys are restricted to ASCII so HTTP header decoding remains unambiguous.
     """
     expected = os.environ.get("KB_API_KEY", "")
-    if not expected.strip() or expected != expected.strip():
+    if not expected.strip() or expected != expected.strip() or not expected.isascii():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Knowledge-base authentication is not configured",

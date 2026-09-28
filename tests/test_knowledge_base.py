@@ -3,7 +3,7 @@
 import json
 import subprocess
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +18,7 @@ from app.services.knowledge_base import (
     KnowledgeBaseSyncService,
     get_best_kb_match,
 )
+from app.sync_kb import main as sync_kb_main
 
 
 def topic(keyword="help", answer="Contact support", priority=0):
@@ -217,6 +218,87 @@ def test_google_adapter_quotes_tab_names_and_maps_columns():
     assert reader.get_all("Team's FAQ") == [row(answer="A")]
     values.get.assert_called_once_with(
         spreadsheetId="test-sheet", range="'Team''s FAQ'!A2:E", majorDimension="ROWS"
+    )
+
+
+def test_google_environment_requires_both_nonsecret_settings(monkeypatch):
+    """Fail clearly before authentication when spreadsheet settings are incomplete."""
+    monkeypatch.delenv("GOOGLE_SPREADSHEET_ID", raising=False)
+    monkeypatch.setenv(
+        "GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/service-account.json"
+    )
+    with pytest.raises(ValueError, match="GOOGLE_SPREADSHEET_ID"):
+        GoogleSheetsReader.from_environment()
+
+
+def test_google_cli_missing_configuration_returns_safe_json(monkeypatch, capsys):
+    """Return machine-readable configuration failure without exposing paths or secrets."""
+    monkeypatch.delenv("GOOGLE_SPREADSHEET_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.setattr("sys.argv", ["sync_kb", "--google"])
+    assert sync_kb_main() == 1
+    assert json.loads(capsys.readouterr().out) == {
+        "success": False,
+        "topics_written": 0,
+        "errors": [
+            {
+                "tab": "configuration",
+                "row": 0,
+                "reason": "Google Sheets configuration is incomplete",
+            }
+        ],
+    }
+
+
+def test_google_cli_unreadable_credentials_returns_safe_json(monkeypatch, capsys):
+    """Return the same safe contract when the configured credential file is unreadable."""
+    monkeypatch.setenv("GOOGLE_SPREADSHEET_ID", "sheet-id")
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/missing.json")
+    monkeypatch.setattr(
+        "app.integrations.spreadsheet.GoogleSheetsReader.from_environment",
+        Mock(side_effect=OSError("credential contents must not be returned")),
+    )
+    monkeypatch.setattr("sys.argv", ["sync_kb", "--google"])
+    assert sync_kb_main() == 1
+    output = capsys.readouterr().out
+    assert "credential contents" not in output
+    assert json.loads(output)["errors"][0]["reason"] == (
+        "Google Sheets configuration is incomplete"
+    )
+
+
+def test_google_environment_factory_uses_read_only_scope(monkeypatch):
+    """Pass the configured file and read-only scope to the Google client factory."""
+    monkeypatch.setenv("GOOGLE_SPREADSHEET_ID", "sheet-id")
+    monkeypatch.setenv(
+        "GOOGLE_SERVICE_ACCOUNT_FILE", "credentials/service-account.json"
+    )
+    credentials = object()
+    service = object()
+    calls = {}
+
+    def fake_credentials(path, scopes):
+        calls["credentials"] = (path, scopes)
+        return credentials
+
+    def fake_build(*args, **kwargs):
+        calls["build"] = (args, kwargs)
+        return service
+
+    monkeypatch.setattr(
+        "app.integrations.spreadsheet.service_account.Credentials.from_service_account_file",
+        fake_credentials,
+    )
+    monkeypatch.setattr("app.integrations.spreadsheet.build", fake_build)
+    reader = GoogleSheetsReader.from_environment()
+    assert reader.service is service
+    assert calls["credentials"] == (
+        "credentials/service-account.json",
+        ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    )
+    assert calls["build"] == (
+        ("sheets", "v4"),
+        {"credentials": credentials, "cache_discovery": False},
     )
 
 
