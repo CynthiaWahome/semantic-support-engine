@@ -9,6 +9,7 @@ from app.services.knowledge_base import KnowledgeBaseSyncService
 
 
 def main() -> int:
+    """Import the selected CSV, print its result, and signal failure with exit 1."""
     parser = argparse.ArgumentParser(description="Import a knowledge-base CSV export")
     parser.add_argument("csv", type=Path)
     args = parser.parse_args()

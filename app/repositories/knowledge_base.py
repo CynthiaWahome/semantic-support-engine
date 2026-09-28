@@ -16,16 +16,22 @@ _topics_adapter = TypeAdapter(Topics)
 
 
 class KnowledgeBaseRepository(Protocol):
-    def get_all_topics(self) -> Topics: ...
+    def get_all_topics(self) -> Topics:
+        """Load a complete snapshot for question answering."""
+        ...
 
-    def set_all_topics(self, topics: Topics) -> None: ...
+    def set_all_topics(self, topics: Topics) -> None:
+        """Replace the stored snapshot only after the caller validates it."""
+        ...
 
 
 class LocalKnowledgeBaseRepository:
     def __init__(self, path: Path):
+        """Select a storage path without creating or changing files."""
         self.path = path
 
     def get_all_topics(self) -> Topics:
+        """Load validated JSON, returning no topics if storage is unavailable."""
         try:
             return _topics_adapter.validate_json(self.path.read_bytes())
         except FileNotFoundError:
@@ -36,6 +42,7 @@ class LocalKnowledgeBaseRepository:
             return {}
 
     def set_all_topics(self, topics: Topics) -> None:
+        """Validate and atomically replace JSON using a unique temporary file."""
         payload = _topics_adapter.dump_json(_topics_adapter.validate_python(topics))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = None

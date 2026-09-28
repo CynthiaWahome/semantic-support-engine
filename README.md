@@ -21,7 +21,15 @@ uv run --no-sync uvicorn app.main:app --reload
 `uv sync` installs dependencies into the project's `.venv`. The server runs at
 `http://127.0.0.1:8000`; interactive API documentation is available at `/docs`.
 `GET /health` returns `{"status":"ok"}` and checks application liveness only.
-Local question answering requires no Slack account, credentials, or external service.
+Local question answering requires no Slack account or external service. Configure
+`KB_API_KEY` securely in the server process environment before starting it. Use
+a strong random key; do not commit it or place it in URLs. The application does
+not load `.env` files. In `/docs`, select **Authorize**, enter the same key, then
+try the answer endpoint. Clients must send it in the `X-API-Key` header.
+
+Missing or incorrect client keys return `401`. Missing, blank or whitespace-padded
+server configuration returns `503` without accessing answers. `/health`, `/docs`
+and `/openapi.json` remain public. This intentionally replaces anonymous answering.
 
 ## Structure
 
@@ -75,6 +83,7 @@ Keep source exports and generated storage in ignored `data/`, never in commits.
 
 ```sh
 curl -X POST http://127.0.0.1:8000/knowledge-base/answer \
+  -H "X-API-Key: ${KB_API_KEY}" \
   -H 'Content-Type: application/json' \
   -d '{"question":"How do I sign in?"}'
 ```
@@ -85,10 +94,21 @@ Unknown questions receive a generic support response; this is not RAG yet.
 Matching preserves Thanos's case-insensitive whole-word/phrase behavior and
 highest-priority selection; ties use the first topic. `periodic_` topics are
 stored but excluded from question answering. Blank enabled cells mean true;
-`false`, `0`, `no`, and `n` disable a topic. Invalid rows are skipped and malformed
-priorities default to zero. Later valid rows/tabs override earlier duplicate
-topics, including an explicit disable. All-disabled input clears the snapshot;
-empty or fully invalid input preserves it and reports failure.
+`false`, `0`, `no`, and `n` disable a topic. Fully blank records are ignored.
+Every populated row needs a topic and a recognized enabled value. Enabled rows
+also need an answer, integer priority (blank defaults to zero), and keywords
+unless the topic starts with `periodic_`. Disabled rows need no answer or keywords.
+Any invalid row rejects the entire import, even when other rows are valid.
+Later valid rows/tabs override earlier duplicate topics, including an explicit
+disable. All-disabled input clears the snapshot; empty input preserves it and
+reports failure.
+
+Sync results include `success`, `topics_written` and `errors`. Row errors contain
+the tab, one-based spreadsheet record number (header is row 1), and a reason,
+never answer contents. CSV multiline fields count as one record. Invalid headers,
+extra cells and malformed quoting also identify the offending record. Provider
+or file-access failures return `success: false` without row errors. Failed imports exit with
+code 1 and preserve the previous snapshot; correct the source before retrying.
 
 Google Sheets integration uses `GoogleSheetsReader(service, spreadsheet_id)`
 with a caller-provided authenticated Sheets v4 discovery client. Provision that
@@ -102,8 +122,11 @@ The adapter is tested with a fake provider, not a live Google account.
 
 JSON replacement is atomic, but concurrent imports are last-writer-wins; run
 one importer at a time. This is a local single-instance baseline, not a shared
-database deployment. The answering endpoint has no authentication/rate limiting
-yet: keep it on localhost and do not expose private knowledge publicly.
+database deployment. API-key authentication gates answers, but does not provide
+per-user permissions, tenant isolation or rate limiting. Keep the demo on localhost;
+external deployment additionally requires HTTPS, securely provisioned keys and
+appropriate ingress/rate controls. Do not embed a shared server key in a public
+web frontend.
 
 ### Migration provenance
 

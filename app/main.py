@@ -6,6 +6,7 @@ from app.routes.router import router
 
 
 def create_app() -> FastAPI:
+    """Construct the API and register its public and protected routers."""
     application = FastAPI(
         title="Slack Support Assistant",
         version="0.1.0",
