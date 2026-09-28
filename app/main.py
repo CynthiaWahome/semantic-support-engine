@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from app.api.routes.health import router as health_router
+from app.views.router import router
 
 
 def create_app() -> FastAPI:
@@ -11,7 +11,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="Standalone support assistant — scaffold baseline.",
     )
-    application.include_router(health_router)
+    application.include_router(router)
     return application
 
 
