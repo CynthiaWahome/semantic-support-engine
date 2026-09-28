@@ -24,6 +24,10 @@ Set `KB_API_KEY` in your local `.env` to a strong random secret. You can generat
 one locally with the command below; keep its output private, paste it into your
 local file, and never commit or share it:
 
+Use an ASCII-safe token, such as the `secrets.token_urlsafe` output below. The
+application rejects non-ASCII API-key configuration so HTTP header decoding is
+unambiguous.
+
 ```sh
 uv run --no-sync python -c 'import secrets; print(secrets.token_urlsafe(32))'
 ```
@@ -159,7 +163,8 @@ The adapter is tested with a fake provider, not a live Google account.
 
 To synchronize directly from Google Sheets, create a Google Cloud service
 account, grant its email read access to the spreadsheet, and place its JSON key
-at the ignored path in `GOOGLE_SERVICE_ACCOUNT_FILE`. Set the spreadsheet ID and
+under the ignored `credentials/` directory at the path in
+`GOOGLE_SERVICE_ACCOUNT_FILE`. Set the spreadsheet ID and
 optional comma-separated tab names, then run:
 
 ```sh

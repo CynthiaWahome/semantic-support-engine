@@ -7,6 +7,7 @@
 secrets/
 .secrets/
 credentials*.json
+/credentials/
 service_account*.json
 service-account*.json
 application_default_credentials.json

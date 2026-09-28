@@ -18,6 +18,7 @@ from app.services.knowledge_base import (
     KnowledgeBaseSyncService,
     get_best_kb_match,
 )
+from app.sync_kb import main as sync_kb_main
 
 
 def topic(keyword="help", answer="Contact support", priority=0):
@@ -228,6 +229,25 @@ def test_google_environment_requires_both_nonsecret_settings(monkeypatch):
     )
     with pytest.raises(ValueError, match="GOOGLE_SPREADSHEET_ID"):
         GoogleSheetsReader.from_environment()
+
+
+def test_google_cli_missing_configuration_returns_safe_json(monkeypatch, capsys):
+    """Return machine-readable configuration failure without exposing paths or secrets."""
+    monkeypatch.delenv("GOOGLE_SPREADSHEET_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_SERVICE_ACCOUNT_FILE", raising=False)
+    monkeypatch.setattr("sys.argv", ["sync_kb", "--google"])
+    assert sync_kb_main() == 1
+    assert json.loads(capsys.readouterr().out) == {
+        "success": False,
+        "topics_written": 0,
+        "errors": [
+            {
+                "tab": "configuration",
+                "row": 0,
+                "reason": "Google Sheets configuration is incomplete",
+            }
+        ],
+    }
 
 
 def test_google_environment_factory_uses_read_only_scope(monkeypatch):

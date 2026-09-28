@@ -70,6 +70,7 @@ def ignore_repository(tmp_path):
         ".direnv/local",
         "credentials.json",
         "credentials-dev.json",
+        "credentials/prod.json",
         "service_account-dev.json",
         "service-account-dev.json",
         "application_default_credentials.json",

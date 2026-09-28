@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.core.knowledge_base import get_repository
 from app.integrations.spreadsheet import CSVSpreadsheetReader, GoogleSheetsReader
+from app.schemas.knowledge_base import SyncResult, SyncRowError
 from app.services.knowledge_base import KnowledgeBaseSyncService
 
 
@@ -20,7 +21,21 @@ def main() -> int:
     if args.google == bool(args.csv):
         parser.error("provide a CSV path or use --google")
     if args.google:
-        spreadsheet = GoogleSheetsReader.from_environment()
+        try:
+            spreadsheet = GoogleSheetsReader.from_environment()
+        except ValueError:
+            result = SyncResult(
+                success=False,
+                errors=[
+                    SyncRowError(
+                        tab="configuration",
+                        row=0,
+                        reason="Google Sheets configuration is incomplete",
+                    )
+                ],
+            )
+            print(result.model_dump_json())
+            return 1
         configured_tabs = os.environ.get("GOOGLE_SHEET_TABS", "")
         tabs = [tab.strip() for tab in configured_tabs.split(",") if tab.strip()]
     else:
