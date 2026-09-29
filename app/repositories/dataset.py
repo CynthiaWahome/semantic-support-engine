@@ -23,8 +23,9 @@ class LocalDatasetRepository:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return []
-        records = payload if isinstance(payload, list) else []
-        return [ScrapedQAPair.model_validate(record) for record in records]
+        if not isinstance(payload, list):
+            raise TypeError(f"Dataset snapshot must be a JSON list: {self.path}")
+        return [ScrapedQAPair.model_validate(record) for record in payload]
 
     def save(self, records: list[ScrapedQAPair]) -> None:
         """Atomically replace the snapshot after validating every record."""

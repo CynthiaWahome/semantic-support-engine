@@ -82,8 +82,8 @@ app/
   models/                 Database entities and persistence mappings
   repositories/           Database queries and persistence access
   integrations/           External adapters: Slack, Sheets, embeddings
-scripts/                  Operational commands; runtime credentials stay local
   core/                   Shared configuration, logging, lifecycle
+scripts/                  Operational commands; runtime credentials stay local
 tests/
   test_health.py          HTTP contract test
 .github/

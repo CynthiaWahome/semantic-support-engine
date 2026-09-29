@@ -50,9 +50,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace, reader: SlackHistoryReader) -> int:
     """Execute discovery, optional extraction, and local publication."""
+    patterns = tuple(
+        pattern.strip() for pattern in args.patterns.split(",") if pattern.strip()
+    )
+    if not patterns and not args.channels:
+        raise ValueError(
+            "provide --channels or at least one non-empty --patterns value"
+        )
     scraper = SlackQAScraper(
         reader,
-        channel_patterns=tuple(pattern.strip() for pattern in args.patterns.split(",")),
+        channel_patterns=patterns,
         mentors_channel=args.mentors_channel,
         bot_user_id=reader.fetch_bot_user_id(),
     )
