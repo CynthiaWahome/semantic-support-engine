@@ -37,7 +37,7 @@ It searches approved knowledge first, preserves known keyword answers when
 semantic confidence is low, and applies policy checks before anything is sent
 back to the user.
 
-## What makes it more than a chatbot
+## Built for grounded answers, not plausible guesses
 
 - **A real ETL pipeline** — structured knowledge is extracted, transformed,
   validated, reviewed, and loaded into serving artifacts.
@@ -64,17 +64,19 @@ Answer service and safeguards
 Slack thread today · other adapters later
 ```
 
-## Explore the engineering
+## Read the engineering
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Data pipelines](docs/DATA_PIPELINES.md)
 - [Configuration](docs/CONFIGURATION.md)
 
-## Run locally
+## See it running locally
 
 Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
 
 ```sh
+git clone https://github.com/CynthiaWahome/slack-support-assistant.git
+cd slack-support-assistant
 uv sync --locked
 cp -n .env.example .env
 uv run --env-file .env --no-sync uvicorn app.main:app --reload
@@ -90,3 +92,11 @@ uv run --no-sync pytest
 uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
 ```
+
+## Contribute or adapt the platform
+
+The answering core is designed to be reused beyond Slack. New delivery
+adapters can normalize their platform's events into the existing service
+boundary without duplicating retrieval or policy logic. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for branch, commit, and pull-request
+conventions.
