@@ -258,6 +258,16 @@ missing semantic matches retain the keyword fallback and can notify an injected
 Slack administrator notifier. `InMemoryRagStateStore` is for tests and local
 single-process development; production should inject `UpstashRagStateStore`.
 
+`app.core.rag_runtime` provides `RagRuntimeConfig`, `create_state_store`, and
+`create_rag_service` for composing these boundaries without coupling the core
+service to a particular deployment platform. Deployment code supplies settings
+and secrets through an injected mapping or explicit constructor values; the RAG
+core does not load `.env` files or discover credentials. Select `memory` for
+local development, `upstash` for shared runtime state, or `none` when safeguards
+are intentionally disabled for a controlled test. The notifier remains an
+injected adapter so Slack, Zedu, or another platform can provide its own
+delivery mechanism.
+
 JSON replacement is atomic, but concurrent imports are last-writer-wins; run
 one importer at a time. This is a local single-instance baseline, not a shared
 database deployment. API-key authentication gates answers, but does not provide
