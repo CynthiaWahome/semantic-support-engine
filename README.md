@@ -9,7 +9,8 @@ Spreadsheet-backed question answering is migrated: prioritized keyword matching,
 local JSON storage, CSV import, and a read-only Google Sheets adapter. Slack
 event answering is now migrated as an isolated adapter: direct messages and bot
 mentions receive knowledge-base answers, replies stay in the source thread, and
-replayed Slack events are ignored. Q&A ingestion, semantic retrieval, and
+replayed Slack events are ignored. Slack Q&A extraction, local JSON checkpoints,
+and Excel review exports are now migrated; curation, semantic retrieval, and
 onboarding are not yet migrated.
 
 ## Run locally
@@ -81,6 +82,7 @@ app/
   models/                 Database entities and persistence mappings
   repositories/           Database queries and persistence access
   integrations/           External adapters: Slack, Sheets, embeddings
+scripts/                  Operational commands; runtime credentials stay local
   core/                   Shared configuration, logging, lifecycle
 tests/
   test_health.py          HTTP contract test
@@ -97,6 +99,30 @@ The liveness endpoint demonstrates `routes/health.py → services/health.py`, wi
 its response contract in `schemas/health.py`. No database or ORM is configured
 yet; knowledge-base persistence uses JSON. `models/` is reserved for database
 entities, not HTTP schemas. Register new HTTP routers in `routes/router.py`.
+
+## Run the Slack extraction pipeline
+
+The scraper reads Slack history through the runtime environment and writes only
+to local ignored output paths. It never loads `.env` files itself. Start with a
+dry run to verify channel targeting without fetching message history:
+
+```sh
+export SLACK_BOT_TOKEN="xoxb-your-token"
+uv run --no-sync python -m scripts.scrape_kb --dry-run
+```
+
+Run extraction for the configured `support-` and `help-` channel prefixes:
+
+```sh
+uv run --no-sync python -m scripts.scrape_kb
+```
+
+The command writes `data/scraper/kb_checkpoint.json` after each channel and
+publishes `kb_dataset.json` and `kb_dataset.xlsx` for local review. Use
+`--channels`, `--exclude-channels`, `--patterns`, `--mentors-channel`, or
+`--output-dir` to narrow a run. The optional runtime variables are
+`CHANNEL_PATTERNS`, `MENTORS_CHANNEL`, and `SCRAPER_OUTPUT_DIR`. Do not commit
+Slack-derived output; review and sanitize it before any retrieval index is built.
 
 ## Slack answering
 
