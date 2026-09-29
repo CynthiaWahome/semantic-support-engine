@@ -717,6 +717,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "google-api-python-client" },
     { name = "google-auth" },
+    { name = "slack-sdk" },
     { name = "slack-bolt" },
     { name = "uvicorn" },
 ]
@@ -733,6 +734,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "google-api-python-client", specifier = ">=2.166,<3" },
     { name = "google-auth", specifier = ">=2.38,<3" },
+    { name = "slack-sdk", specifier = ">=3.27,<4" },
     { name = "slack-bolt", specifier = ">=1.26,<2" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
