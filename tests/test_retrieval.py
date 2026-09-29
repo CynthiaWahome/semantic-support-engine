@@ -16,6 +16,7 @@ from app.services.retrieval import (
     SemanticRetrievalService,
     as_retrieval_document,
 )
+from scripts.build_retrieval_index import main as build_index_main
 
 
 class FakeEmbeddings:
@@ -78,6 +79,34 @@ def test_rebuild_persists_and_reloads_index(tmp_path: Path):
     assert results[0].score == pytest.approx(1.0)
 
 
+def test_failed_generation_keeps_previous_index_and_records(tmp_path: Path):
+    """Keep the previous complete generation when manifest publication fails."""
+    repository = FaissVectorRepository(
+        tmp_path / "kb_index.faiss", tmp_path / "kb_index_records.json"
+    )
+    repository.replace(
+        [document("old", "How do I access my account?", "Old answer.")],
+        [np.array([1.0, 0.0], dtype="float32")],
+    )
+
+    with (
+        patch(
+            "app.repositories.retrieval._write_manifest_atomically",
+            side_effect=OSError("manifest unavailable"),
+        ),
+        pytest.raises(OSError, match="manifest unavailable"),
+    ):
+        repository.replace(
+            [document("new", "How do I access my account?", "New answer.")],
+            [np.array([1.0, 0.0], dtype="float32")],
+        )
+
+    reloaded = service(tmp_path)
+    results = reloaded.retrieve("I need account access")
+
+    assert {result.document.document_id for result in results} == {"old"}
+
+
 def test_rag_falls_back_to_keyword_service_when_no_confident_match(tmp_path: Path):
     """Preserve the original keyword answer when RAG has no confident result."""
     rag = RagKnowledgeBaseService(
@@ -132,6 +161,19 @@ def test_hugging_face_provider_normalizes_response():
         timeout=15.0,
     )
     assert np.linalg.norm(vector) == pytest.approx(1.0)
+
+
+def test_index_builder_reports_missing_token_cleanly(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """Exit through argparse instead of printing a traceback for missing auth."""
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+
+    with pytest.raises(SystemExit) as error:
+        build_index_main(["--input", str(tmp_path / "records.json")])
+
+    assert error.value.code == 2
+    assert "HF_TOKEN must be provided" in capsys.readouterr().err
 
 
 def test_dataset_record_becomes_retrieval_document():

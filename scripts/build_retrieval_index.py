@@ -47,10 +47,11 @@ def load_documents(path: Path) -> list:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Build the local persisted index using the runtime Hugging Face token."""
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     token = os.environ.get("HF_TOKEN")
     if not token:
-        raise ValueError("HF_TOKEN must be provided by the runtime environment")
+        parser.error("HF_TOKEN must be provided by the runtime environment")
     documents = load_documents(args.input)
     provider = HuggingFaceEmbeddingProvider(token=token, model=args.model)
     repository = FaissVectorRepository(args.index, args.records)
