@@ -1,4 +1,4 @@
-# Support Answering Platform
+# Semantic Support Engine
 
 ## From scattered team knowledge to answers people can trust.
 
