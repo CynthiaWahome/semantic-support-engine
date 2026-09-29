@@ -1,6 +1,8 @@
 # Contributing
 
-This project is intended for a private repository under CynthiaWahome.
+This project is maintained as a portfolio-quality, platform-agnostic support
+answering service. Contributions and focused improvements should preserve the
+separation between the reusable answering core and delivery adapters.
 
 ## Branches and reviews
 
