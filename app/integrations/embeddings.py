@@ -1,62 +1,72 @@
-"""Embedding-provider boundaries and a deterministic local implementation."""
+"""Embedding-provider adapters used by the retrieval index."""
 
 from __future__ import annotations
 
-import hashlib
-import itertools
-import math
-import re
-from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
-TOKEN_PATTERN = re.compile(r"[\w']+", re.UNICODE)
+import faiss
+import numpy as np
+import requests
 
 
 class EmbeddingProvider(Protocol):
     """Provider boundary for local or hosted text embeddings."""
 
-    @property
-    def dimension(self) -> int:
-        """Return the fixed vector length produced by this provider."""
-        ...
-
-    def embed(self, text: str) -> tuple[float, ...]:
-        """Embed one non-empty text value into a fixed-size vector."""
+    def embed(self, text: str) -> np.ndarray:
+        """Return one normalized embedding vector for non-empty text."""
         ...
 
 
-class HashEmbeddingProvider:
-    """Deterministic local baseline for tests and offline development.
+class HuggingFaceEmbeddingProvider:
+    """Use Hugging Face Inference API feature extraction for RAG queries."""
 
-    This is a retrieval seam, not a claim of model-quality semantic search. A
-    hosted embedding provider can implement ``EmbeddingProvider`` later while
-    the repository and service remain unchanged.
-    """
-
-    def __init__(self, dimension: int = 128) -> None:
-        if dimension < 2:
-            raise ValueError("embedding dimension must be at least 2")
-        self._dimension = dimension
+    def __init__(
+        self,
+        token: str,
+        model: str = "sentence-transformers/all-mpnet-base-v2",
+        timeout: float = 15.0,
+    ) -> None:
+        if not token.strip():
+            raise ValueError("Hugging Face token must not be blank")
+        if not model.strip():
+            raise ValueError("Hugging Face model must not be blank")
+        self.model = model
+        self.timeout = timeout
+        self._headers = {"Authorization": f"Bearer {token}"}
 
     @property
-    def dimension(self) -> int:
-        """Return the configured vector length."""
-        return self._dimension
-
-    def embed(self, text: str) -> tuple[float, ...]:
-        """Create a normalized token and bigram feature vector."""
-        tokens = [token.lower() for token in TOKEN_PATTERN.findall(text)]
-        if not tokens:
-            raise ValueError("cannot embed blank text")
-        features: Sequence[str] = (
-            *tokens,
-            *(f"{left} {right}" for left, right in itertools.pairwise(tokens)),
+    def endpoint(self) -> str:
+        """Return the model's feature-extraction endpoint."""
+        return (
+            "https://router.huggingface.co/hf-inference/models/"
+            f"{self.model}/pipeline/feature-extraction"
         )
-        vector = [0.0] * self._dimension
-        for feature in features:
-            digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
-            index = int.from_bytes(digest[:4], "big") % self._dimension
-            sign = 1.0 if digest[4] % 2 else -1.0
-            vector[index] += sign
-        magnitude = math.sqrt(sum(value * value for value in vector))
-        return tuple(value / magnitude for value in vector)
+
+    def embed(self, text: str) -> np.ndarray:
+        """Request an embedding and normalize it for inner-product search."""
+        if not text.strip():
+            raise ValueError("cannot embed blank text")
+        response = requests.post(
+            self.endpoint,
+            headers=self._headers,
+            json={"inputs": text},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        vector = _pool_embedding(response.json())
+        faiss.normalize_L2(vector)
+        return vector[0]
+
+
+def _pool_embedding(payload: Any) -> np.ndarray:
+    """Convert HF vectors to one float32 row, mean-pooling token vectors."""
+    values = np.asarray(payload, dtype="float32")
+    if values.ndim == 1:
+        values = values.reshape(1, -1)
+    elif values.ndim == 2:
+        values = values.mean(axis=0, keepdims=True)
+    else:
+        raise ValueError("embedding response must be a one- or two-dimensional array")
+    if values.shape[1] == 0 or not np.isfinite(values).all():
+        raise ValueError("embedding response must contain finite values")
+    return values

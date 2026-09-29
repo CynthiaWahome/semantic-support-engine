@@ -1,65 +1,126 @@
-"""Vector-store boundary and an in-memory implementation for one process."""
+"""Persistent FAISS index and answer-record storage for semantic retrieval."""
 
 from __future__ import annotations
 
-import math
+import json
+import os
+import tempfile
 from collections.abc import Sequence
-from dataclasses import dataclass
+from pathlib import Path
+
+import faiss
+import numpy as np
 
 from app.schemas.retrieval import RetrievalDocument, RetrievedDocument
 
 
-@dataclass(frozen=True)
-class _VectorRecord:
-    document: RetrievalDocument
-    vector: tuple[float, ...]
+class FaissVectorRepository:
+    """Persist normalized vectors and their documents as replaceable snapshots."""
 
-
-class InMemoryVectorRepository:
-    """Replaceable vector index for local development and deterministic tests."""
-
-    def __init__(self, dimension: int) -> None:
-        if dimension < 2:
-            raise ValueError("vector dimension must be at least 2")
-        self.dimension = dimension
-        self._records: tuple[_VectorRecord, ...] = ()
+    def __init__(self, index_path: Path, records_path: Path) -> None:
+        self.index_path = index_path
+        self.records_path = records_path
+        self._index: faiss.Index | None = None
+        self._documents: list[RetrievalDocument] | None = None
 
     def replace(
         self,
-        records: Sequence[tuple[RetrievalDocument, tuple[float, ...]]],
+        documents: Sequence[RetrievalDocument],
+        vectors: Sequence[np.ndarray],
     ) -> None:
-        """Atomically replace the index after validating vector dimensions."""
-        validated: list[_VectorRecord] = []
-        for document, vector in records:
-            self._validate_vector(vector)
-            validated.append(_VectorRecord(document=document, vector=vector))
-        self._records = tuple(validated)
+        """Build and persist a complete FAISS index and JSON sidecar."""
+        if len(documents) != len(vectors):
+            raise ValueError("every retrieval document needs one embedding")
+        if not documents:
+            raise ValueError("cannot build an empty retrieval index")
+        matrix = np.asarray(vectors, dtype="float32")
+        if matrix.ndim != 2 or matrix.shape[0] != len(documents):
+            raise ValueError("embeddings must form one two-dimensional matrix")
+        if not np.isfinite(matrix).all():
+            raise ValueError("embeddings must contain only finite values")
+        faiss.normalize_L2(matrix)
+        index = faiss.IndexFlatIP(matrix.shape[1])
+        index.add(matrix)
+        self.index_path.parent.mkdir(parents=True, exist_ok=True)
+        self.records_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_index_atomically(index, self.index_path)
+        _write_records_atomically(list(documents), self.records_path)
+        self._index = index
+        self._documents = list(documents)
 
-    def search(
-        self, query_vector: tuple[float, ...], limit: int
-    ) -> list[RetrievedDocument]:
-        """Return the highest cosine-similarity documents in stable order."""
+    def load(self) -> None:
+        """Load and validate the persisted index and its document sidecar."""
+        try:
+            index = faiss.read_index(str(self.index_path))
+            payload = json.loads(self.records_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, RuntimeError) as error:
+            raise FileNotFoundError("retrieval index artifacts are missing") from error
+        if not isinstance(payload, list):
+            raise TypeError("retrieval records must be a JSON list")
+        documents = [RetrievalDocument.model_validate(item) for item in payload]
+        if index.ntotal != len(documents):
+            raise ValueError("retrieval index and records have different sizes")
+        self._index = index
+        self._documents = documents
+
+    def search(self, vector: np.ndarray, limit: int = 3) -> list[RetrievedDocument]:
+        """Return top matches from the loaded persisted index."""
         if limit < 1:
             raise ValueError("limit must be positive")
-        self._validate_vector(query_vector)
-        scored = [
+        if self._index is None or self._documents is None:
+            self.load()
+        query = np.asarray(vector, dtype="float32").reshape(1, -1)
+        if query.shape[1] != self._index.d:
+            raise ValueError("query and index dimensions do not match")
+        faiss.normalize_L2(query)
+        scores, positions = self._index.search(query, min(limit, self._index.ntotal))
+        return [
             RetrievedDocument(
-                document=record.document,
-                score=_dot_product(query_vector, record.vector),
+                document=self._documents[position],
+                score=float(score),
             )
-            for record in self._records
+            for score, position in zip(scores[0], positions[0])
+            if position >= 0
         ]
-        return sorted(scored, key=lambda result: result.score, reverse=True)[:limit]
 
-    def _validate_vector(self, vector: tuple[float, ...]) -> None:
-        if len(vector) != self.dimension:
-            raise ValueError(
-                f"expected vector dimension {self.dimension}, got {len(vector)}"
+
+def _write_index_atomically(index: faiss.Index, path: Path) -> None:
+    """Write a FAISS artifact through a same-directory temporary file."""
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=path.parent, prefix=f".{path.name}.", delete=False
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+        faiss.write_index(index, str(temporary_path))
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _write_records_atomically(documents: list[RetrievalDocument], path: Path) -> None:
+    """Write the sidecar records through a same-directory temporary file."""
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            mode="w",
+            encoding="utf-8",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(
+                [document.model_dump(mode="json") for document in documents],
+                temporary,
+                indent=2,
+                ensure_ascii=False,
             )
-        if not all(math.isfinite(value) for value in vector):
-            raise ValueError("vectors must contain only finite values")
-
-
-def _dot_product(left: tuple[float, ...], right: tuple[float, ...]) -> float:
-    """Calculate cosine similarity for normalized vectors."""
-    return max(-1.0, min(1.0, sum(a * b for a, b in zip(left, right))))
+            temporary.write("\n")
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)

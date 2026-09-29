@@ -21,7 +21,7 @@ class QuestionRequest(BaseModel):
 
 class AnswerResponse(BaseModel):
     answer: str
-    source: Literal["knowledge_base", "fallback"]
+    source: Literal["knowledge_base", "semantic_retrieval", "fallback"]
 
 
 class SyncRowError(BaseModel):

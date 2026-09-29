@@ -1,15 +1,50 @@
-"""Tests for the semantic retrieval foundation."""
+"""Tests for the persisted semantic retrieval and fallback flow."""
 
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import numpy as np
 import pytest
 
-from app.integrations.embeddings import HashEmbeddingProvider
-from app.repositories.retrieval import InMemoryVectorRepository
+from app.integrations.embeddings import HuggingFaceEmbeddingProvider
+from app.repositories.retrieval import FaissVectorRepository
+from app.schemas.knowledge_base import KnowledgeTopic
 from app.schemas.retrieval import RetrievalDocument
-from app.services.retrieval import SemanticRetrievalService
+from app.services.knowledge_base import KnowledgeBaseService
+from app.services.retrieval import (
+    RagKnowledgeBaseService,
+    SemanticRetrievalService,
+    as_retrieval_document,
+)
+
+
+class FakeEmbeddings:
+    """Deterministic provider used to test persistence without network calls."""
+
+    def embed(self, text: str) -> np.ndarray:
+        """Place access and billing fixtures on separate axes."""
+        return np.array(
+            [1.0, 0.0] if "access" in text.lower() else [0.0, 1.0],
+            dtype="float32",
+        )
+
+
+class MemoryRepository:
+    """Minimal keyword repository for fallback tests."""
+
+    def get_all_topics(self):
+        return {
+            "access": KnowledgeTopic(
+                keywords=["access"], answer="Use the account portal."
+            )
+        }
+
+    def set_all_topics(self, topics):
+        raise NotImplementedError
 
 
 def document(document_id: str, question: str, answer: str) -> RetrievalDocument:
-    """Build a minimal retrieval fixture."""
+    """Build a retrieval fixture."""
     return RetrievalDocument(
         document_id=document_id,
         question=question,
@@ -18,56 +53,98 @@ def document(document_id: str, question: str, answer: str) -> RetrievalDocument:
     )
 
 
-@pytest.fixture
-def service() -> SemanticRetrievalService:
-    """Provide a deterministic local retrieval service."""
-    embeddings = HashEmbeddingProvider(dimension=64)
-    return SemanticRetrievalService(
-        embeddings,
-        InMemoryVectorRepository(dimension=64),
-        minimum_score=0.2,
+def service(tmp_path: Path) -> SemanticRetrievalService:
+    """Provide a retrieval service backed by temporary FAISS artifacts."""
+    repository = FaissVectorRepository(
+        tmp_path / "kb_index.faiss", tmp_path / "kb_index_records.json"
     )
+    return SemanticRetrievalService(FakeEmbeddings(), repository, minimum_score=0.6)
 
 
-def test_rebuild_and_retrieve_returns_relevant_document(service):
-    """Retrieve the matching support answer before unrelated content."""
-    service.rebuild(
+def test_rebuild_persists_and_reloads_index(tmp_path: Path):
+    """Persist vectors and retrieve them after constructing a new repository."""
+    first_service = service(tmp_path)
+    first_service.rebuild(
         [
-            document("access", "How do I sign in?", "Use the account portal."),
-            document(
-                "billing", "Where can I find my invoice?", "Open billing history."
-            ),
+            document("access", "How do I access my account?", "Use the portal."),
+            document("billing", "Where is my invoice?", "Open billing history."),
         ]
     )
 
-    results = service.retrieve("I cannot log in to my account")
+    second_service = service(tmp_path)
+    results = second_service.retrieve("I need account access")
 
-    assert results
     assert results[0].document.document_id == "access"
-    assert results[0].score >= 0.2
+    assert results[0].score == pytest.approx(1.0)
 
 
-def test_rebuild_replaces_previous_documents(service):
-    """Prevent stale answers from surviving a complete index rebuild."""
-    service.rebuild([document("old", "How do I sign in?", "Old answer")])
-    service.rebuild([document("new", "Where is the invoice?", "New answer")])
+def test_rag_falls_back_to_keyword_service_when_no_confident_match(tmp_path: Path):
+    """Preserve the original keyword answer when RAG has no confident result."""
+    rag = RagKnowledgeBaseService(
+        service(tmp_path), KnowledgeBaseService(MemoryRepository())
+    )
 
-    results = service.retrieve("How do I sign in?", limit=3)
+    response = rag.answer("How do I get access?")
 
-    assert all(result.document.document_id == "new" for result in results)
-
-
-def test_low_confidence_results_use_empty_retrieval(service):
-    """Return no context when similarity is below the confidence threshold."""
-    service.rebuild([document("access", "How do I sign in?", "Use the portal.")])
-
-    assert service.retrieve("What is the weather today?") == []
+    assert response.answer == "Use the account portal."
+    assert response.source == "knowledge_base"
 
 
-def test_retrieval_rejects_invalid_dimensions():
-    """Fail during construction when the index cannot accept provider vectors."""
-    with pytest.raises(ValueError, match="dimensions must match"):
-        SemanticRetrievalService(
-            HashEmbeddingProvider(dimension=64),
-            InMemoryVectorRepository(dimension=32),
-        )
+def test_rag_returns_semantic_answer_when_index_matches(tmp_path: Path):
+    """Return the curated semantic answer before keyword matching."""
+    retrieval = service(tmp_path)
+    retrieval.rebuild(
+        [document("access", "How do I access my account?", "Use the new portal.")]
+    )
+    rag = RagKnowledgeBaseService(retrieval, KnowledgeBaseService(MemoryRepository()))
+
+    response = rag.answer("I need account access")
+
+    assert response.answer == "Use the new portal."
+    assert response.source == "semantic_retrieval"
+
+
+def test_missing_index_falls_back_without_raising(tmp_path: Path):
+    """Treat missing build artifacts as a safe RAG miss."""
+    rag = RagKnowledgeBaseService(
+        service(tmp_path), KnowledgeBaseService(MemoryRepository())
+    )
+
+    assert rag.answer("How do I get access?").source == "knowledge_base"
+
+
+def test_hugging_face_provider_normalizes_response():
+    """Use the configured model endpoint and normalize its returned vector."""
+    response = MagicMock()
+    response.json.return_value = [1.0, 2.0, 3.0]
+    provider = HuggingFaceEmbeddingProvider("hf-test-token")
+
+    with patch(
+        "app.integrations.embeddings.requests.post", return_value=response
+    ) as post:
+        vector = provider.embed("How do I sign in?")
+
+    response.raise_for_status.assert_called_once_with()
+    post.assert_called_once_with(
+        provider.endpoint,
+        headers={"Authorization": "Bearer hf-test-token"},
+        json={"inputs": "How do I sign in?"},
+        timeout=15.0,
+    )
+    assert np.linalg.norm(vector) == pytest.approx(1.0)
+
+
+def test_dataset_record_becomes_retrieval_document():
+    """Preserve the scraper thread and channel as retrieval metadata."""
+    result = as_retrieval_document(
+        {
+            "thread_ts": "1700000000.000000",
+            "source_channel": "support-general",
+            "question": "How do I sign in?",
+            "answer": "Use the portal.",
+        },
+        4,
+    )
+
+    assert result.document_id == "1700000000.000000"
+    assert result.source == "support-general"
