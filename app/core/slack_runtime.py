@@ -67,7 +67,7 @@ def create_configured_slack_app(
     repository: FaissVectorRepository | None = None,
     state: RagStateStore | None = None,
     notifier: RagAdminNotifier | None = None,
-    token_verification_enabled: bool = True,
+    token_verification_enabled: bool = False,
 ) -> App:
     """Compose the configured RAG service and Slack Bolt event application."""
     bot_token = _required_setting(settings, "SLACK_BOT_TOKEN")

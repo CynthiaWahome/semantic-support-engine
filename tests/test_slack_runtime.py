@@ -17,12 +17,18 @@ from app.services.knowledge_base import KnowledgeBaseService
 
 
 class FakeEmbeddings:
+    """Deterministic embedding provider for offline composition tests."""
+
     def embed(self, text: str) -> np.ndarray:
+        """Return a fixed vector without contacting an embedding provider."""
         return np.array([1.0, 0.0], dtype="float32")
 
 
 class FakeRepository:
+    """Repository double returning one confident semantic match."""
+
     def search(self, vector: np.ndarray, limit: int = 3) -> list[RetrievedDocument]:
+        """Return the fixture document regardless of the query vector."""
         return [
             RetrievedDocument(
                 document=RetrievalDocument(
@@ -37,7 +43,10 @@ class FakeRepository:
 
 
 class MemoryRepository:
+    """Minimal keyword repository used by the local RAG composition test."""
+
     def get_all_topics(self):
+        """Return one fallback topic without reading local storage."""
         return {
             "fallback": KnowledgeTopic(
                 keywords=["fallback"], answer="Use the fallback answer."
@@ -45,18 +54,23 @@ class MemoryRepository:
         }
 
     def set_all_topics(self, topics):
-        pass
+        """Accept writes required by the repository protocol."""
 
 
 class RecordingNotifier:
+    """Notifier double that records policy notifications in memory."""
+
     def __init__(self) -> None:
+        """Initialize an empty notification list."""
         self.calls = []
 
     def notify(self, question: str, user_id: str, channel: str, reason: str) -> None:
+        """Record a notification without contacting Slack."""
         self.calls.append((question, user_id, channel, reason))
 
 
 def settings() -> dict[str, str]:
+    """Return safe fake deployment settings for local tests."""
     return {
         "SLACK_BOT_TOKEN": "xoxb-test-token",
         "SLACK_SIGNING_SECRET": "test-signing-secret",
@@ -66,6 +80,7 @@ def settings() -> dict[str, str]:
 
 
 def test_configured_service_answers_a_slack_event_with_rag():
+    """Deliver a semantic answer through the configured Slack boundary."""
     service = create_configured_slack_service(
         settings(),
         embeddings=FakeEmbeddings(),
@@ -95,6 +110,7 @@ def test_configured_service_answers_a_slack_event_with_rag():
 
 
 def test_configured_service_uses_injected_notification_boundary():
+    """Allow callers to inject notification behavior without Slack access."""
     notifier = RecordingNotifier()
     service = create_configured_slack_service(
         settings(),
@@ -113,6 +129,7 @@ def test_configured_service_uses_injected_notification_boundary():
 
 
 def test_configured_app_requires_slack_credentials():
+    """Reject an app configuration that omits required Slack credentials."""
     with pytest.raises(ValueError, match="SLACK_BOT_TOKEN"):
         create_configured_slack_app(
             {"RAG_STATE_BACKEND": "none"},
@@ -122,6 +139,7 @@ def test_configured_app_requires_slack_credentials():
 
 
 def test_configured_app_injects_credentials_without_network_calls():
+    """Construct the Bolt app without validating a fake token remotely."""
     app = create_configured_slack_app(
         settings(),
         embeddings=FakeEmbeddings(),

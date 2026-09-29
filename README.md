@@ -159,6 +159,11 @@ unanswered-question and rate-limit notifications. The in-memory duplicate and
 RAG state stores are appropriate for one process; shared stores are required
 before running multiple workers.
 
+The factory does not perform a startup `auth.test` call by default. Slack Bolt
+still verifies signed incoming requests when the configured receiver handles
+them; deployments may enable startup token verification when they explicitly
+want that network check.
+
 The configured factory activates semantic retrieval first, preserves the
 existing keyword answer fallback, and keeps the transport boundary separate
 from the answer service. Merge the event-aware rate-limit hardening before
