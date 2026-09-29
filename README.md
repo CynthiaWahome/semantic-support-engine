@@ -12,8 +12,9 @@ mentions receive knowledge-base answers, replies stay in the source thread, and
 replayed Slack events are ignored. Slack Q&A extraction, local JSON checkpoints,
 and Excel review exports are now migrated. Semantic retrieval now follows the
 recovered design: Hugging Face embeddings, a persisted FAISS index, a JSON record
-sidecar, and RAG-first keyword fallback composition. Curation, Redis safeguards,
-and onboarding remain separate integration work.
+sidecar, and RAG-first keyword fallback composition. RAG safeguards now have
+injectable cache, rate-limit, blocked-topic, and notification boundaries;
+onboarding remains separate integration work.
 
 ## Run locally
 
@@ -245,6 +246,16 @@ uv run --no-sync python -m scripts.build_retrieval_index \
 The original feature uses cosine-equivalent inner-product search over normalized
 `all-mpnet-base-v2` vectors. Runtime retrieval searches the top three records and
 requires a minimum similarity of `0.6` before returning a curated answer.
+
+### RAG safeguards
+
+`RagKnowledgeBaseService` accepts an optional `RagSafeguards` instance. With an
+injected Upstash-compatible state store it provides seven-day semantic-answer
+caching and a ten-question hourly per-user limit. Restricted topics return the
+generic fallback instead of bypassing policy through keyword matching. Weak or
+missing semantic matches retain the keyword fallback and can notify an injected
+Slack administrator notifier. `InMemoryRagStateStore` is for tests and local
+single-process development; production should inject `UpstashRagStateStore`.
 
 JSON replacement is atomic, but concurrent imports are last-writer-wins; run
 one importer at a time. This is a local single-instance baseline, not a shared
