@@ -93,16 +93,18 @@ not find a match.
 
 ## State boundaries
 
-The state-store protocol supports cache values, rate counters, and event-aware
-rate decisions.
+The state-store protocol supports cache values, user-based rate counters, and
+separate duplicate-event claims.
 
 - The in-memory adapter is deterministic and useful for tests or one process.
 - Upstash Redis provides shared state for a distributed deployment.
 - `none` disables RAG safeguards explicitly when a caller needs an unguarded
   composition for a controlled use case.
 
-Duplicate claims are separate from RAG rate state. A multi-worker deployment
-needs a shared duplicate-event store as well as shared RAG state if it must
+Duplicate claims use a separate store from the user-based rate counter. When a
+Slack delivery fails, the duplicate claim is released, but the rate counter is
+not restored; a retry can therefore consume another rate unit. A multi-worker
+deployment needs shared duplicate-event and RAG state stores if it must
 coordinate delivery across workers.
 
 ## Platform boundary

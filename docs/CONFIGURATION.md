@@ -33,9 +33,11 @@ application and import commands do not load `.env` files themselves; `uv
 | `SLACK_BOT_USER_ID` | Bot identity for mention filtering | Unset |
 | `SLACK_ADMIN_CHANNEL` | Optional unanswered-question notification channel | Unset |
 
-The configured Slack factory accepts an injected settings mapping. It does not
-perform a startup Slack `auth.test` call by default. A configured receiver
-still verifies signed incoming requests.
+`create_slack_app(service)` accepts a `SlackAnsweringService` and constructs a
+Bolt app without injected settings. The FastAPI application does not register a
+Slack receiver; deployments must configure a receiver separately and provide
+`SLACK_SIGNING_SECRET` so it can verify signed requests. The configured factory
+does not perform a startup Slack `auth.test` call by default.
 
 ## Knowledge synchronization
 

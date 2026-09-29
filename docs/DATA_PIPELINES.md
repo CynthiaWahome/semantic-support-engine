@@ -63,12 +63,16 @@ resume.
 
 Messages and threads are converted into reviewable question-and-answer records.
 The pipeline produces JSON and Excel review exports. Raw workspace output stays
-local and ignored; it must be reviewed and sanitized before indexing.
+local and ignored. A local checkpoint is written after each completed channel,
+but the scraper does not load that checkpoint on reruns; each run starts with
+an empty record set and does not automatically resume.
 
 ### Load
 
-Approved records become the input to retrieval-index preparation. The project
-does not treat every scraped message as an answerable fact.
+Review and sanitization are manual steps before retrieval-index preparation.
+The index builder does not verify approval, so only reviewed and approved
+records should be supplied as its input. The project does not treat every
+scraped message as an answerable fact.
 
 ## Retrieval-index preparation
 

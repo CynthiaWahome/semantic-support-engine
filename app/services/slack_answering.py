@@ -14,9 +14,14 @@ class AnswerService(Protocol):
     """Minimal answer boundary accepted by Slack event handling."""
 
     def answer(
-        self, question: str, *, user_id: str = "", channel: str = ""
+        self,
+        question: str,
+        *,
+        user_id: str = "",
+        channel: str = "",
+        request_id: str = "",
     ) -> AnswerResponse:
-        """Return an answer for a normalized question."""
+        """Return an answer for a normalized question and request context."""
         ...
 
 
@@ -138,6 +143,7 @@ class SlackAnsweringService:
                 question.question,
                 user_id=question.user_id,
                 channel=question.channel,
+                request_id=question.event_key,
             )
         except Exception:
             self.duplicate_events.release(question.event_key)

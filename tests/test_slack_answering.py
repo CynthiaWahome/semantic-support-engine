@@ -40,7 +40,12 @@ class SemanticAnswerService:
     """Synthetic RAG composition proving Slack depends on the answer boundary."""
 
     def answer(
-        self, question: str, *, user_id: str = "", channel: str = ""
+        self,
+        question: str,
+        *,
+        user_id: str = "",
+        channel: str = "",
+        request_id: str = "",
     ) -> AnswerResponse:
         """Return a semantic answer without exposing retrieval internals."""
         return AnswerResponse(
@@ -56,10 +61,15 @@ class ContextRecordingAnswerService:
         self.calls = []
 
     def answer(
-        self, question: str, *, user_id: str = "", channel: str = ""
+        self,
+        question: str,
+        *,
+        user_id: str = "",
+        channel: str = "",
+        request_id: str = "",
     ) -> AnswerResponse:
         """Return a fixture answer and retain the caller context."""
-        self.calls.append((question, user_id, channel))
+        self.calls.append((question, user_id, channel, request_id))
         return AnswerResponse(
             answer="Context-aware answer.", source="semantic_retrieval"
         )
@@ -137,7 +147,39 @@ def test_slack_forwards_user_and_channel_context_to_answer_service():
 
     answer_slack_event(event, client, answering)
 
-    assert answer_service.calls == [("How do I get access?", "U123", "D123")]
+    assert answer_service.calls == [
+        ("How do I get access?", "U123", "D123", "event:Ev-context")
+    ]
+
+
+def test_failed_delivery_retries_with_the_same_request_id():
+    """Keep rate-limit idempotency stable across Slack delivery retries."""
+    client = MagicMock()
+    client.chat_postMessage.side_effect = [RuntimeError("temporary failure"), None]
+    answer_service = ContextRecordingAnswerService()
+    answering = SlackAnsweringService(
+        answer_service,
+        duplicate_events=InMemoryDuplicateEventStore(),
+        bot_user_id="UBOT",
+    )
+    event = {
+        "type": "message",
+        "event_id": "Ev-retry-context",
+        "channel": "D123",
+        "channel_type": "im",
+        "user": "U123",
+        "text": "How do I get access?",
+        "ts": "176.200",
+    }
+
+    with pytest.raises(RuntimeError, match="temporary failure"):
+        answer_slack_event(event, client, answering)
+    answer_slack_event(event, client, answering)
+
+    assert [call[-1] for call in answer_service.calls] == [
+        "event:Ev-retry-context",
+        "event:Ev-retry-context",
+    ]
 
 
 def test_mention_replies_in_the_existing_thread():
