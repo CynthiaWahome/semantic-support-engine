@@ -203,6 +203,8 @@ def test_in_memory_rate_limit_counts_each_event_once():
     assert not store.increment_once("rate", "event:1", 3600, 1)
     assert not store.increment_once("rate", "event:1", 3600, 1)
     assert store.increment_once("rate", "event:2", 3600, 1)
+    assert store.increment_once("rate", "event:2", 3600, 1)
+    assert store._counts["rate"][0] == 2
 
 
 def test_in_memory_rate_events_are_pruned_after_expiry():
