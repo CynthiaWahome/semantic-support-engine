@@ -67,6 +67,7 @@ class RagKnowledgeBaseService:
         question: str,
         user_id: str = "",
         channel: str = "",
+        request_id: str = "",
     ) -> AnswerResponse:
         """Return the best semantic answer or delegate to keyword matching."""
         if self.safeguards and not user_id:
@@ -77,7 +78,7 @@ class RagKnowledgeBaseService:
                 answer=self.keyword_service.fallback,
                 source="fallback",
             )
-        if self.safeguards and self.safeguards.is_rate_limited(user_id):
+        if self.safeguards and self.safeguards.is_rate_limited(user_id, request_id):
             self._notify(question, user_id, channel, "rate limited")
             return AnswerResponse(answer=RATE_LIMIT_MESSAGE, source="fallback")
         if self.safeguards:

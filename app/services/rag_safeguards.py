@@ -97,11 +97,19 @@ class RagSafeguards:
         if self.state is not None:
             self.state.set(self.cache_key(question), answer, self.cache_ttl_seconds)
 
-    def is_rate_limited(self, user_id: str) -> bool:
-        """Return true after the configured per-user hourly limit."""
+    def is_rate_limited(self, user_id: str, request_id: str = "") -> bool:
+        """Return true after the limit, counting each request ID once."""
         if self.state is None or not user_id:
             return False
         key = f"rag:rate:{user_id}"
+        if request_id:
+            event_digest = hashlib.sha256(request_id.encode()).hexdigest()
+            return self.state.increment_once(
+                key,
+                f"rag:rate:event:{event_digest}",
+                DEFAULT_RATE_WINDOW_SECONDS,
+                self.rate_limit_per_hour,
+            )
         return (
             self.state.increment(key, DEFAULT_RATE_WINDOW_SECONDS)
             > self.rate_limit_per_hour

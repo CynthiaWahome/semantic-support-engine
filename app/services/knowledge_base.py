@@ -46,7 +46,12 @@ class KnowledgeBaseService:
         self.fallback = fallback
 
     def answer(
-        self, question: str, *, user_id: str = "", channel: str = ""
+        self,
+        question: str,
+        *,
+        user_id: str = "",
+        channel: str = "",
+        request_id: str = "",
     ) -> AnswerResponse:
         """Return a stored keyword match or the configured generic response."""
         match = get_best_kb_match(question, self.repository.get_all_topics())

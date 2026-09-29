@@ -103,6 +103,18 @@ def test_rate_limit_returns_safe_message_and_notifies():
     assert notifier.calls[-1][-1] == "rate limited"
 
 
+def test_same_request_id_does_not_consume_another_rate_limit_unit():
+    """Make a retried event reuse its original rate-limit decision."""
+    retrieval = FakeRetrieval()
+    safeguards = RagSafeguards(InMemoryRagStateStore(), rate_limit_per_hour=1)
+    service = rag(retrieval, safeguards)
+
+    service.answer("first", user_id="U1", request_id="event:1")
+    response = service.answer("second", user_id="U1", request_id="event:1")
+
+    assert response.answer != RATE_LIMIT_MESSAGE
+
+
 def test_blocked_topic_cannot_bypass_policy_through_keyword_fallback():
     """Return generic fallback instead of exposing a restricted keyword answer."""
     keyword = MagicMock(
@@ -150,15 +162,16 @@ def test_upstash_adapter_maps_state_operations():
     """Translate the minimal state interface to the Upstash client methods."""
     client = MagicMock()
     client.get.return_value = "cached"
-    client.eval.return_value = 1
+    client.eval.side_effect = [1, "0"]
     store = UpstashRagStateStore(client)
 
     assert store.get("key") == "cached"
     store.set("key", "value", 60)
     assert store.increment("rate", 3600) == 1
+    assert not store.increment_once("rate", "event", 3600, 10)
 
     client.set.assert_called_once_with("key", "value", ex=60)
-    client.eval.assert_called_once()
+    assert client.eval.call_count == 2
 
 
 def test_in_memory_rate_window_is_not_extended_by_retries():
@@ -172,6 +185,15 @@ def test_in_memory_rate_window_is_not_extended_by_retries():
         assert store.increment("rate", 1) == 1
         assert store.increment("rate", 1) == 2
         assert store.increment("rate", 1) == 1
+
+
+def test_in_memory_rate_limit_counts_each_event_once():
+    """Mirror shared-store event idempotency in local development."""
+    store = InMemoryRagStateStore()
+
+    assert not store.increment_once("rate", "event:1", 3600, 1)
+    assert not store.increment_once("rate", "event:1", 3600, 1)
+    assert store.increment_once("rate", "event:2", 3600, 1)
 
 
 def test_slack_admin_notifier_formats_bounded_notification():
