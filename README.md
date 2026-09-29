@@ -75,8 +75,8 @@ Slack thread today · other adapters later
 Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
 
 ```sh
-git clone https://github.com/CynthiaWahome/slack-support-assistant.git
-cd slack-support-assistant
+git clone https://github.com/CynthiaWahome/semantic-support-engine.git
+cd semantic-support-engine
 uv sync --locked
 cp -n .env.example .env
 uv run --env-file .env --no-sync uvicorn app.main:app --reload
