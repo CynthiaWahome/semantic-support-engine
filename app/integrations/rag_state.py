@@ -145,6 +145,11 @@ class InMemoryRagStateStore:
             raise ValueError("limit must be positive")
         now = time.monotonic()
         with self._lock:
+            self._rate_events = {
+                stored_event: decision
+                for stored_event, decision in self._rate_events.items()
+                if decision[1] > now
+            }
             previous = self._rate_events.get(event_key)
             if previous is not None and previous[1] > now:
                 return previous[0]

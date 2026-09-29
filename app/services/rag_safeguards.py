@@ -103,7 +103,9 @@ class RagSafeguards:
             return False
         key = f"rag:rate:{user_id}"
         if request_id:
-            event_digest = hashlib.sha256(request_id.encode()).hexdigest()
+            event_digest = hashlib.sha256(
+                f"{user_id}:{request_id}".encode()
+            ).hexdigest()
             return self.state.increment_once(
                 key,
                 f"rag:rate:event:{event_digest}",

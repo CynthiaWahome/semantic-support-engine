@@ -115,6 +115,15 @@ def test_same_request_id_does_not_consume_another_rate_limit_unit():
     assert response.answer != RATE_LIMIT_MESSAGE
 
 
+def test_same_request_id_is_scoped_to_each_user():
+    """Prevent one user's event marker from affecting another user."""
+    safeguards = RagSafeguards(InMemoryRagStateStore(), rate_limit_per_hour=1)
+
+    assert not safeguards.is_rate_limited("U1", request_id="shared-event")
+    assert not safeguards.is_rate_limited("U2", request_id="shared-event")
+    assert safeguards.is_rate_limited("U2", request_id="second-event")
+
+
 def test_blocked_topic_cannot_bypass_policy_through_keyword_fallback():
     """Return generic fallback instead of exposing a restricted keyword answer."""
     keyword = MagicMock(
@@ -194,6 +203,20 @@ def test_in_memory_rate_limit_counts_each_event_once():
     assert not store.increment_once("rate", "event:1", 3600, 1)
     assert not store.increment_once("rate", "event:1", 3600, 1)
     assert store.increment_once("rate", "event:2", 3600, 1)
+
+
+def test_in_memory_rate_events_are_pruned_after_expiry():
+    """Bound replay-marker memory during sustained process-local traffic."""
+    store = InMemoryRagStateStore()
+
+    with patch(
+        "app.integrations.rag_state.time.monotonic",
+        side_effect=[100.0, 102.0],
+    ):
+        assert not store.increment_once("rate", "expired-event", 1, 1)
+        assert not store.increment_once("rate", "fresh-event", 1, 1)
+
+    assert list(store._rate_events) == ["fresh-event"]
 
 
 def test_slack_admin_notifier_formats_bounded_notification():
