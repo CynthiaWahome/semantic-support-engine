@@ -9,6 +9,7 @@ dependencies = [
     "google-api-python-client>=2.166,<3",
     "google-auth>=2.38,<3",
     "slack-sdk>=3.27,<4",
+    "slack-bolt>=1.26,<2",
     "uvicorn>=0.34,<1",
 ]
 

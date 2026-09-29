@@ -7,7 +7,10 @@ Wahome to Thanos, reusing the existing implementation where appropriate.
 
 Spreadsheet-backed question answering is migrated: prioritized keyword matching,
 local JSON storage, CSV import, and a read-only Google Sheets adapter. Slack
-messaging, Q&A ingestion, semantic retrieval, and onboarding are not yet migrated.
+event answering is now migrated as an isolated adapter: direct messages and bot
+mentions receive knowledge-base answers, replies stay in the source thread, and
+replayed Slack events are ignored. Q&A ingestion, semantic retrieval, and
+onboarding are not yet migrated.
 
 ## Run locally
 
@@ -94,6 +97,22 @@ The liveness endpoint demonstrates `routes/health.py → services/health.py`, wi
 its response contract in `schemas/health.py`. No database or ORM is configured
 yet; knowledge-base persistence uses JSON. `models/` is reserved for database
 entities, not HTTP schemas. Register new HTTP routers in `routes/router.py`.
+
+## Slack answering
+
+`SlackAnsweringService` accepts Slack `message` and `app_mention` events. It
+answers direct messages and messages that mention the bot, then sends the answer
+with the original message timestamp as `thread_ts`. When its caller supplies an
+`event_id`, repeated deliveries are claimed by that ID and ignored within the
+duplicate-event TTL. The Slack Bolt adapter currently passes the inner event
+payload, so Bolt deliveries use the message identity (`channel`, `ts`, `user`,
+and `text`) for deduplication.
+
+`create_slack_app` registers the narrow Slack Bolt event surface for this
+feature. Authentication and process transport are deployment concerns: provide
+Slack credentials through the runtime environment when wiring Socket Mode or an
+HTTP receiver. The in-memory duplicate store is appropriate for one process; a
+shared store is required before running multiple workers.
 
 ## Spreadsheet knowledge base
 
