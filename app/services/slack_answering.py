@@ -13,7 +13,9 @@ from app.schemas.slack import NormalizedSlackQuestion, SlackReply
 class AnswerService(Protocol):
     """Minimal answer boundary accepted by Slack event handling."""
 
-    def answer(self, question: str) -> AnswerResponse:
+    def answer(
+        self, question: str, *, user_id: str = "", channel: str = ""
+    ) -> AnswerResponse:
         """Return an answer for a normalized question."""
         ...
 
@@ -107,6 +109,7 @@ def _normalize_question(
     return NormalizedSlackQuestion(
         event_key=_event_key(event),
         channel=channel,
+        user_id=user,
         question=question,
         thread_ts=str(event.get("thread_ts") or message_ts),
     )
@@ -131,7 +134,11 @@ class SlackAnsweringService:
         if question is None or not self.duplicate_events.claim(question.event_key):
             return None
         try:
-            answer = self.knowledge_base.answer(question.question)
+            answer = self.knowledge_base.answer(
+                question.question,
+                user_id=question.user_id,
+                channel=question.channel,
+            )
         except Exception:
             self.duplicate_events.release(question.event_key)
             raise

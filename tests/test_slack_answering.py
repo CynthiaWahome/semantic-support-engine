@@ -39,11 +39,29 @@ def service(bot_user_id: str | None = "UBOT") -> SlackAnsweringService:
 class SemanticAnswerService:
     """Synthetic RAG composition proving Slack depends on the answer boundary."""
 
-    def answer(self, question: str) -> AnswerResponse:
+    def answer(
+        self, question: str, *, user_id: str = "", channel: str = ""
+    ) -> AnswerResponse:
         """Return a semantic answer without exposing retrieval internals."""
         return AnswerResponse(
             answer="Semantic answer from the reviewed index.",
             source="semantic_retrieval",
+        )
+
+
+class ContextRecordingAnswerService:
+    """Record Slack context passed through the answer-service boundary."""
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def answer(
+        self, question: str, *, user_id: str = "", channel: str = ""
+    ) -> AnswerResponse:
+        """Return a fixture answer and retain the caller context."""
+        self.calls.append((question, user_id, channel))
+        return AnswerResponse(
+            answer="Context-aware answer.", source="semantic_retrieval"
         )
 
 
@@ -96,6 +114,30 @@ def test_slack_can_use_semantic_answer_service():
         text="Semantic answer from the reviewed index.",
         thread_ts="150.200",
     )
+
+
+def test_slack_forwards_user_and_channel_context_to_answer_service():
+    """Preserve identity and channel for rate limits and notifications."""
+    client = MagicMock()
+    answer_service = ContextRecordingAnswerService()
+    answering = SlackAnsweringService(
+        answer_service,
+        duplicate_events=InMemoryDuplicateEventStore(),
+        bot_user_id="UBOT",
+    )
+    event = {
+        "type": "message",
+        "event_id": "Ev-context",
+        "channel": "D123",
+        "channel_type": "im",
+        "user": "U123",
+        "text": "How do I get access?",
+        "ts": "175.200",
+    }
+
+    answer_slack_event(event, client, answering)
+
+    assert answer_service.calls == [("How do I get access?", "U123", "D123")]
 
 
 def test_mention_replies_in_the_existing_thread():

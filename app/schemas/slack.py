@@ -18,5 +18,6 @@ class NormalizedSlackQuestion:
 
     event_key: str
     channel: str
+    user_id: str
     question: str
     thread_ts: str
