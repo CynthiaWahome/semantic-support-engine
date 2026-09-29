@@ -68,6 +68,8 @@ class RagRuntimeConfig:
 
 def create_state_store(config: RagRuntimeConfig) -> RagStateStore | None:
     """Create the configured local, shared, or disabled state boundary."""
+    if config.state_backend not in {"memory", "upstash", "none"}:
+        raise ValueError("RAG_STATE_BACKEND must be memory, upstash, or none")
     if config.state_backend == "none":
         return None
     if config.state_backend == "memory":

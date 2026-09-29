@@ -86,6 +86,12 @@ def test_upstash_state_backend_requires_both_runtime_credentials():
         create_state_store(config)
 
 
+def test_state_store_rejects_unknown_direct_configuration():
+    """Apply the backend allowlist to configs built without a mapping."""
+    with pytest.raises(ValueError, match="RAG_STATE_BACKEND"):
+        create_state_store(RagRuntimeConfig(state_backend="redis"))
+
+
 def test_create_rag_service_injects_local_dependencies(tmp_path: Path):
     """Compose the RAG service from injected test-safe dependencies."""
     config = RagRuntimeConfig(
