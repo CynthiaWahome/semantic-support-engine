@@ -10,8 +10,10 @@ local JSON storage, CSV import, and a read-only Google Sheets adapter. Slack
 event answering is now migrated as an isolated adapter: direct messages and bot
 mentions receive knowledge-base answers, replies stay in the source thread, and
 replayed Slack events are ignored. Slack Q&A extraction, local JSON checkpoints,
-and Excel review exports are now migrated; curation, semantic retrieval, and
-onboarding are not yet migrated.
+and Excel review exports are now migrated. The semantic retrieval foundation now
+provides a replaceable embedding boundary, deterministic local embeddings, an
+in-memory vector index, and confidence filtering; curation and onboarding remain
+separate integration work.
 
 ## Run locally
 
@@ -175,7 +177,10 @@ curl -X POST http://127.0.0.1:8000/knowledge-base/answer \
 ```
 
 The response includes `answer` and `source` (`knowledge_base` or `fallback`).
-Unknown questions receive a generic support response; this is not RAG yet.
+Unknown questions receive a generic support response. Semantic retrieval is
+available as a service boundary, but it is not wired into the answer route until
+the reviewed Slack dataset is indexed and a production embedding provider is
+selected.
 
 Matching preserves Thanos's case-insensitive whole-word/phrase behavior and
 highest-priority selection; ties use the first topic. `periodic_` topics are
