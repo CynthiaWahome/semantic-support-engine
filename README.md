@@ -10,8 +10,10 @@ local JSON storage, CSV import, and a read-only Google Sheets adapter. Slack
 event answering is now migrated as an isolated adapter: direct messages and bot
 mentions receive knowledge-base answers, replies stay in the source thread, and
 replayed Slack events are ignored. Slack Q&A extraction, local JSON checkpoints,
-and Excel review exports are now migrated; curation, semantic retrieval, and
-onboarding are not yet migrated.
+and Excel review exports are now migrated. Semantic retrieval now follows the
+recovered design: Hugging Face embeddings, a persisted FAISS index, a JSON record
+sidecar, and RAG-first keyword fallback composition. Curation, Redis safeguards,
+and onboarding remain separate integration work.
 
 ## Run locally
 
@@ -61,6 +63,8 @@ The complete current application configuration is:
 | --- | --- | --- |
 | `KB_API_KEY` | Shared secret required for HTTP question answering | Unset; answering returns 503 |
 | `KB_STORAGE_PATH` | JSON snapshot path shared by the server and importer | `data/kb_topics.json` |
+| `HF_TOKEN` | Hugging Face token used by the offline index builder | Unset; index building fails |
+| `HF_EMBED_MODEL` | Hugging Face feature-extraction model | `sentence-transformers/all-mpnet-base-v2` |
 
 The Google Sheets sync consumes `GOOGLE_SPREADSHEET_ID`,
 `GOOGLE_SERVICE_ACCOUNT_FILE` and `GOOGLE_SHEET_TABS` when invoked with
@@ -174,8 +178,11 @@ curl -X POST http://127.0.0.1:8000/knowledge-base/answer \
   -d '{"question":"How do I sign in?"}'
 ```
 
-The response includes `answer` and `source` (`knowledge_base` or `fallback`).
-Unknown questions receive a generic support response; this is not RAG yet.
+The current HTTP response includes `answer` and `source` (`knowledge_base` or
+`fallback`). The `RagKnowledgeBaseService` composition additionally returns
+`source: semantic_retrieval` for a confident indexed answer, then falls back to
+the existing keyword response when the index is missing or the score is below
+the configured threshold. Slack/runtime composition is the next integration step.
 
 Matching preserves Thanos's case-insensitive whole-word/phrase behavior and
 highest-priority selection; ties use the first topic. `periodic_` topics are
@@ -221,6 +228,23 @@ header, and publishes only a successful validated snapshot. It does not create,
 edit or delete spreadsheet content. The service-account JSON is never committed;
 do not paste it into chat or public repositories. This is an explicit sync
 command, not a background scheduler yet.
+
+### Build the semantic retrieval index
+
+Use a cleaned and reviewed Q&A JSON export from the scraper pipeline. The command
+embeds each question-answer pair through Hugging Face and writes the durable
+`data/kb_index.faiss` and `data/kb_index_records.json` artifacts. Keep the input,
+token and generated files local; they are ignored and must not be committed.
+
+```sh
+export HF_TOKEN="hf-your-token"
+uv run --no-sync python -m scripts.build_retrieval_index \
+  --input data/rag_kb_clean.json
+```
+
+The original feature uses cosine-equivalent inner-product search over normalized
+`all-mpnet-base-v2` vectors. Runtime retrieval searches the top three records and
+requires a minimum similarity of `0.6` before returning a curated answer.
 
 JSON replacement is atomic, but concurrent imports are last-writer-wins; run
 one importer at a time. This is a local single-instance baseline, not a shared
