@@ -66,11 +66,20 @@ The complete current application configuration is:
 | `KB_STORAGE_PATH` | JSON snapshot path shared by the server and importer | `data/kb_topics.json` |
 | `HF_TOKEN` | Hugging Face token used by the offline index builder | Unset; index building fails |
 | `HF_EMBED_MODEL` | Hugging Face feature-extraction model | `sentence-transformers/all-mpnet-base-v2` |
+| `RAG_INDEX_PATH` | Persisted FAISS index path | `data/kb_index.faiss` |
+| `RAG_RECORDS_PATH` | Persisted retrieval-record sidecar path | `data/kb_index_records.json` |
+| `RAG_MIN_SIMILARITY` | Minimum semantic-match score | `0.6` |
+| `RAG_STATE_BACKEND` | Safeguard state backend: `memory`, `upstash`, or `none` | `memory` |
+| `UPSTASH_REDIS_REST_URL` | Upstash REST URL when the state backend is `upstash` | Unset |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash REST token when the state backend is `upstash` | Unset |
+| `SLACK_BOT_TOKEN` | Slack bot token for the configured Bolt app | Unset |
+| `SLACK_SIGNING_SECRET` | Slack request-signing secret for HTTP receivers | Unset |
+| `SLACK_BOT_USER_ID` | Bot user ID used to identify mentions and ignore bot messages | Unset |
+| `SLACK_ADMIN_CHANNEL` | Optional channel for unanswered and rate-limit notifications | Unset; notifications disabled |
 
 The Google Sheets sync consumes `GOOGLE_SPREADSHEET_ID`,
 `GOOGLE_SERVICE_ACCOUNT_FILE` and `GOOGLE_SHEET_TABS` when invoked with
-`--google`. Slack configuration will be documented when Slack runtime wiring is
-implemented.
+`--google`.
 Production may inject these variables directly and omit `--env-file`. Local
 `.env` files, credentials, data, notes and the roadmap are ignored; only the
 root `.env.example` template is intended for version control. Ignore rules do
@@ -140,10 +149,21 @@ payload, so Bolt deliveries use the message identity (`channel`, `ts`, `user`,
 and `text`) for deduplication.
 
 `create_slack_app` registers the narrow Slack Bolt event surface for this
-feature. Authentication and process transport are deployment concerns: provide
-Slack credentials through the runtime environment when wiring Socket Mode or an
-HTTP receiver. The in-memory duplicate store is appropriate for one process; a
-shared store is required before running multiple workers.
+feature. `create_configured_slack_app(settings)` composes the RAG service,
+configured state backend, optional admin notifier, and authenticated Bolt app
+from an injected deployment mapping. It does not load `.env` files, call Slack,
+or choose a hosting platform. Provide `SLACK_BOT_TOKEN` and
+`SLACK_SIGNING_SECRET` through the deployment environment; the optional bot
+user ID enables mention filtering and the optional admin channel enables
+unanswered-question and rate-limit notifications. The in-memory duplicate and
+RAG state stores are appropriate for one process; shared stores are required
+before running multiple workers.
+
+The configured factory activates semantic retrieval first, preserves the
+existing keyword answer fallback, and keeps the transport boundary separate
+from the answer service. Merge the event-aware rate-limit hardening before
+enabling this factory in production so a retried Slack delivery does not
+consume a second rate-limit unit.
 
 ## Spreadsheet knowledge base
 
