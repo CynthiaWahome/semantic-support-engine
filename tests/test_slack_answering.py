@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.integrations.slack import answer_slack_event
-from app.schemas.knowledge_base import KnowledgeTopic
+from app.schemas.knowledge_base import AnswerResponse, KnowledgeTopic
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.slack_answering import (
     InMemoryDuplicateEventStore,
@@ -36,6 +36,26 @@ def service(bot_user_id: str | None = "UBOT") -> SlackAnsweringService:
     )
 
 
+class SemanticAnswerService:
+    """Synthetic RAG composition proving Slack depends on the answer boundary."""
+
+    def answer(self, question: str) -> AnswerResponse:
+        """Return a semantic answer without exposing retrieval internals."""
+        return AnswerResponse(
+            answer="Semantic answer from the reviewed index.",
+            source="semantic_retrieval",
+        )
+
+
+def semantic_service() -> SlackAnsweringService:
+    """Compose Slack handling with the semantic answer implementation."""
+    return SlackAnsweringService(
+        SemanticAnswerService(),
+        duplicate_events=InMemoryDuplicateEventStore(),
+        bot_user_id="UBOT",
+    )
+
+
 def test_dm_is_answered_and_starts_a_thread():
     client = MagicMock()
     event = {
@@ -53,6 +73,28 @@ def test_dm_is_answered_and_starts_a_thread():
     assert reply is not None
     client.chat_postMessage.assert_called_once_with(
         channel="D123", text="Use the account portal.", thread_ts="100.200"
+    )
+
+
+def test_slack_can_use_semantic_answer_service():
+    """Deliver the RAG answer while preserving the Slack reply contract."""
+    client = MagicMock()
+    event = {
+        "type": "app_mention",
+        "event_id": "Ev-semantic",
+        "channel": "C123",
+        "user": "U123",
+        "text": "<@UBOT> I cannot sign in",
+        "ts": "150.200",
+    }
+
+    reply = answer_slack_event(event, client, semantic_service())
+
+    assert reply is not None
+    client.chat_postMessage.assert_called_once_with(
+        channel="C123",
+        text="Semantic answer from the reviewed index.",
+        thread_ts="150.200",
     )
 
 
