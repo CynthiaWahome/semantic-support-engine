@@ -6,8 +6,16 @@ from collections.abc import Mapping
 from threading import Lock
 from typing import Any, Protocol
 
+from app.schemas.knowledge_base import AnswerResponse
 from app.schemas.slack import NormalizedSlackQuestion, SlackReply
-from app.services.knowledge_base import KnowledgeBaseService
+
+
+class AnswerService(Protocol):
+    """Minimal answer boundary accepted by Slack event handling."""
+
+    def answer(self, question: str) -> AnswerResponse:
+        """Return an answer for a normalized question."""
+        ...
 
 
 class DuplicateEventStore(Protocol):
@@ -109,7 +117,7 @@ class SlackAnsweringService:
 
     def __init__(
         self,
-        knowledge_base: KnowledgeBaseService,
+        knowledge_base: AnswerService,
         duplicate_events: DuplicateEventStore | None = None,
         bot_user_id: str | None = None,
     ) -> None:

@@ -182,7 +182,8 @@ The current HTTP response includes `answer` and `source` (`knowledge_base` or
 `fallback`). The `RagKnowledgeBaseService` composition additionally returns
 `source: semantic_retrieval` for a confident indexed answer, then falls back to
 the existing keyword response when the index is missing or the score is below
-the configured threshold. Slack/runtime composition is the next integration step.
+the configured threshold. The Slack answering boundary accepts this composition;
+runtime provider and index configuration remain deployment concerns.
 
 Matching preserves Thanos's case-insensitive whole-word/phrase behavior and
 highest-priority selection; ties use the first topic. `periodic_` topics are
