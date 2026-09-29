@@ -69,6 +69,8 @@ class RagKnowledgeBaseService:
         channel: str = "",
     ) -> AnswerResponse:
         """Return the best semantic answer or delegate to keyword matching."""
+        if self.safeguards and not user_id:
+            raise ValueError("user_id is required when RAG safeguards are enabled")
         if self.safeguards and self.safeguards.is_blocked(question):
             self._notify(question, user_id, channel, "blocked topic")
             return AnswerResponse(

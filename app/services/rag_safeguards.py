@@ -5,14 +5,14 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Protocol
 
+from app.core.rag_constants import (
+    DEFAULT_BLOCKED_TOPICS,
+    DEFAULT_CACHE_TTL_SECONDS,
+    DEFAULT_RATE_LIMIT_PER_HOUR,
+    DEFAULT_RATE_WINDOW_SECONDS,
+)
 from app.integrations.rag_state import RagStateStore
 
-DEFAULT_BLOCKED_TOPICS = (
-    "promotion criteria",
-    "stage promotion",
-    "intern record",
-    "personal score",
-)
 RATE_LIMIT_MESSAGE = (
     "You've sent a lot of questions in the last hour. "
     "Please review the pinned resources and try again later."
@@ -50,12 +50,13 @@ class SlackRagAdminNotifier:
         reason: str,
     ) -> None:
         """Post a bounded notification without logging or returning source data."""
+        safe_question = _escape_slack_mrkdwn(question[:1000])
         self.client.chat_postMessage(
             channel=self.admin_channel,
             text=(
                 f":question: *RAG {reason}*\n"
                 f"*From:* <@{user_id}> in <#{channel}>\n"
-                f"*Question:* {question[:1000]}"
+                f"*Question:* {safe_question}"
             ),
         )
 
@@ -67,8 +68,8 @@ class RagSafeguards:
         self,
         state: RagStateStore | None = None,
         *,
-        cache_ttl_seconds: int = 604_800,
-        rate_limit_per_hour: int = 10,
+        cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+        rate_limit_per_hour: int = DEFAULT_RATE_LIMIT_PER_HOUR,
         blocked_topics: tuple[str, ...] = DEFAULT_BLOCKED_TOPICS,
     ) -> None:
         if cache_ttl_seconds <= 0:
@@ -101,10 +102,18 @@ class RagSafeguards:
         if self.state is None or not user_id:
             return False
         key = f"rag:rate:{user_id}"
-        return self.state.increment(key, 3600) > self.rate_limit_per_hour
+        return (
+            self.state.increment(key, DEFAULT_RATE_WINDOW_SECONDS)
+            > self.rate_limit_per_hour
+        )
 
     @staticmethod
     def cache_key(question: str) -> str:
         """Create a stable, non-sensitive cache key for normalized text."""
         digest = hashlib.sha256(question.lower().strip().encode()).hexdigest()
         return f"rag:cache:{digest}"
+
+
+def _escape_slack_mrkdwn(value: str) -> str:
+    """Escape Slack mrkdwn control characters in untrusted text."""
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

@@ -1,6 +1,6 @@
 """Tests for RAG cache, rate, policy, and notification safeguards."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.integrations.rag_state import InMemoryRagStateStore, UpstashRagStateStore
 from app.schemas.knowledge_base import KnowledgeTopic
@@ -115,7 +115,7 @@ def test_blocked_topic_cannot_bypass_policy_through_keyword_fallback():
         safeguards=RagSafeguards(InMemoryRagStateStore()),
     )
 
-    response = service.answer("What are the promotion criteria?")
+    response = service.answer("What are the promotion criteria?", user_id="U1")
 
     assert response.answer == "Please ask support."
     keyword.answer.assert_not_called()
@@ -134,11 +134,23 @@ def test_unanswered_question_notifies_then_uses_keyword_fallback():
     ]
 
 
+def test_safeguarded_answer_requires_user_identity():
+    """Prevent callers from bypassing rate limiting with an empty identity."""
+    service = rag(FakeRetrieval(), RagSafeguards(InMemoryRagStateStore()))
+
+    try:
+        service.answer("How do I get access?")
+    except ValueError as error:
+        assert str(error) == "user_id is required when RAG safeguards are enabled"
+    else:
+        raise AssertionError("expected safeguarded answers to require user_id")
+
+
 def test_upstash_adapter_maps_state_operations():
     """Translate the minimal state interface to the Upstash client methods."""
     client = MagicMock()
     client.get.return_value = "cached"
-    client.incr.return_value = 1
+    client.eval.return_value = 1
     store = UpstashRagStateStore(client)
 
     assert store.get("key") == "cached"
@@ -146,7 +158,20 @@ def test_upstash_adapter_maps_state_operations():
     assert store.increment("rate", 3600) == 1
 
     client.set.assert_called_once_with("key", "value", ex=60)
-    client.expire.assert_called_once_with("rate", 3600)
+    client.eval.assert_called_once()
+
+
+def test_in_memory_rate_window_is_not_extended_by_retries():
+    """Keep the first request's expiry for the whole rate-limit window."""
+    store = InMemoryRagStateStore()
+
+    with patch(
+        "app.integrations.rag_state.time.monotonic",
+        side_effect=[100.0, 100.5, 101.1],
+    ):
+        assert store.increment("rate", 1) == 1
+        assert store.increment("rate", 1) == 2
+        assert store.increment("rate", 1) == 1
 
 
 def test_slack_admin_notifier_formats_bounded_notification():
@@ -164,3 +189,14 @@ def test_slack_admin_notifier_formats_bounded_notification():
             "*Question:* question"
         ),
     )
+
+
+def test_slack_admin_notifier_escapes_untrusted_mrkdwn():
+    """Prevent user text from triggering Slack control syntax."""
+    client = MagicMock()
+    notifier = SlackRagAdminNotifier(client, "U_ADMIN")
+
+    notifier.notify("& <!channel> <tag>", "U1", "C1", "unanswered question")
+
+    text = client.chat_postMessage.call_args.kwargs["text"]
+    assert "&amp; &lt;!channel&gt; &lt;tag&gt;" in text
