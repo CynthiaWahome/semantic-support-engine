@@ -1,7 +1,7 @@
 [project]
 name = "slack-support-assistant"
 version = "0.1.0"
-description = "A standalone Slack support assistant reconstructed from Thanos contributions."
+description = "ETL-backed support answering platform with semantic retrieval and pluggable delivery adapters."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
