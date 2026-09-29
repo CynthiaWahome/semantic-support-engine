@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
 from app.schemas.scraper import ScrapedQAPair
 
@@ -23,6 +24,7 @@ EXPORT_FIELDS = (
     "answerer_name",
     "date",
 )
+EXCEL_CELL_MAX_LENGTH = 32_767
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -46,9 +48,14 @@ def _atomic_write(path: Path, content: str) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def _safe_spreadsheet_value(value: object) -> object:
-    """Prevent Slack-authored formula-like values from executing in Excel."""
-    if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+def _safe_spreadsheet_value(field: str, value: object, record_id: str) -> object:
+    """Make Slack-authored text safe and representable in an Excel cell."""
+    if not isinstance(value, str):
+        return value
+    value = ILLEGAL_CHARACTERS_RE.sub("", value)
+    if field == "answer" and len(value) > EXCEL_CELL_MAX_LENGTH:
+        return f"[TRUNCATED: full answer in JSON record thread_ts={record_id}]"
+    if value.startswith(("=", "+", "-", "@")):
         return f"'{value}"
     return value
 
@@ -70,7 +77,10 @@ def export_xlsx(records: Sequence[ScrapedQAPair], path: Path) -> None:
     for record in records:
         values = record.model_dump(mode="python")
         sheet.append(
-            [_safe_spreadsheet_value(values[field]) for field in EXPORT_FIELDS]
+            [
+                _safe_spreadsheet_value(field, values[field], record.thread_ts)
+                for field in EXPORT_FIELDS
+            ]
         )
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions

@@ -106,6 +106,33 @@ def test_xlsx_export_neutralizes_formula_like_values(tmp_path: Path):
     assert load_workbook(path).active["B2"].value.startswith("'=HYPERLINK")
 
 
+def test_xlsx_export_removes_illegal_control_characters(tmp_path: Path):
+    """Remove control characters rejected by openpyxl from Slack text."""
+    path = tmp_path / "records.xlsx"
+    unsafe = record().model_copy(update={"answer": "Use the portal.\x0b"})
+
+    export_xlsx([unsafe], path)
+
+    assert "\x0b" not in load_workbook(path).active["B2"].value
+
+
+def test_xlsx_export_marks_long_answers_without_losing_json_content(tmp_path: Path):
+    """Point reviewers to JSON when an answer exceeds Excel's cell limit."""
+    json_path = tmp_path / "records.json"
+    xlsx_path = tmp_path / "records.xlsx"
+    long_answer = "A" * 32_768
+    oversized = record().model_copy(update={"answer": long_answer})
+
+    export_json([oversized], json_path)
+    export_xlsx([oversized], xlsx_path)
+
+    cell_value = load_workbook(xlsx_path).active["B2"].value
+    assert cell_value == (
+        "[TRUNCATED: full answer in JSON record thread_ts=1700000000.000000]"
+    )
+    assert json.loads(json_path.read_text(encoding="utf-8"))[0]["answer"] == long_answer
+
+
 class DryRunReader:
     """Minimal reader proving CLI discovery does not fetch message history."""
 
