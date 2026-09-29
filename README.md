@@ -1,20 +1,149 @@
 # Slack Support Assistant
 
-A standalone application reproducing selected features contributed by Cynthia
-Wahome to Thanos, reusing the existing implementation where appropriate.
+![Python](https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white&style=for-the-badge)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white&style=for-the-badge)
+![Slack Bolt](https://img.shields.io/badge/Slack_Bolt-4A154B?logo=slack&logoColor=white&style=for-the-badge)
+![FAISS](https://img.shields.io/badge/FAISS-Semantic_Search-36C5F0?style=for-the-badge)
+![Google Sheets](https://img.shields.io/badge/Google_Sheets-Sync-34A853?logo=googlesheets&logoColor=white&style=for-the-badge)
+![Upstash Redis](https://img.shields.io/badge/Upstash_Redis-State-DC382D?logo=redis&logoColor=white&style=for-the-badge)
+![Pytest](https://img.shields.io/badge/Pytest-0A9EDC?logo=pytest&logoColor=white&style=for-the-badge)
+![Ruff](https://img.shields.io/badge/Ruff-D7FF64?logo=ruff&logoColor=black&style=for-the-badge)
+![uv](https://img.shields.io/badge/uv-6E56CF?style=for-the-badge)
+
+A standalone, platform-agnostic knowledge-support backend that turns recurring
+team questions into searchable, consistent, and safeguarded answers. Slack is
+the current delivery adapter; the knowledge, retrieval, fallback, and policy
+services are kept independent of Slack so another team platform can reuse them.
+
+This repository preserves and rebuilds a substantial prior knowledge-support
+feature as an independently structured FastAPI application. It is deliberately
+not a recreation of a full administration or grading platform.
 
 ## Current status
 
-Spreadsheet-backed question answering is migrated: prioritized keyword matching,
-local JSON storage, CSV import, and a read-only Google Sheets adapter. Slack
-event answering is now migrated as an isolated adapter: direct messages and bot
-mentions receive knowledge-base answers, replies stay in the source thread, and
-replayed Slack events are ignored. Slack Q&A extraction, local JSON checkpoints,
-and Excel review exports are now migrated. Semantic retrieval now follows the
-recovered design: Hugging Face embeddings, a persisted FAISS index, a JSON record
-sidecar, and RAG-first keyword fallback composition. RAG safeguards now have
-injectable cache, rate-limit, blocked-topic, and notification boundaries;
-onboarding remains separate integration work.
+The core implementation is complete and locally tested. It includes:
+
+- spreadsheet-backed keyword question answering with priority ordering;
+- CSV import, local JSON snapshots, and read-only Google Sheets synchronization;
+- Slack question extraction, local checkpoints, and Excel review exports;
+- Hugging Face embeddings, a persisted FAISS index, and a JSON record sidecar;
+- semantic retrieval first, followed by the approved keyword fallback;
+- seven-day semantic-answer caching;
+- ten-question hourly per-user rate limiting;
+- blocked-topic protection that cannot bypass through keyword fallback;
+- unanswered-question and rate-limit notification hooks;
+- Slack direct messages and mentions answered in the original thread;
+- duplicate-event protection and event-aware rate-limit accounting;
+- injectable in-memory and Upstash Redis state-store adapters;
+- a deployment factory that composes the RAG service with Slack Bolt.
+
+The controlled live Slack smoke test remains a deployment verification step. No
+production usage, live cohort result, or external workspace data is claimed by
+this repository.
+
+## What problem this solves
+
+Teams often answer the same operational questions repeatedly. The answer may
+exist in a spreadsheet, a pinned message, a previous support conversation, or a
+review document, but it is difficult to find consistently. This project turns
+that scattered knowledge into a maintained answering workflow:
+
+```text
+curated knowledge → validated records → searchable index → safeguarded answer
+                                                       → Slack thread
+```
+
+The system is intentionally conservative. A semantic match must meet a
+confidence threshold. If it does not, the service preserves the existing
+approved keyword behavior instead of inventing an answer. Policy checks run
+before fallback so restricted topics cannot be exposed through another path.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Sources["Excel / Google Sheets\nReviewed Q&A records\nSanitized Slack dataset"]
+    Curate["Validate and normalize\nTopic, keywords, answer, priority"]
+    Index["Build embeddings\nPersist FAISS index\nWrite JSON sidecar"]
+    Slack["Slack event\nUser, channel, event, thread"]
+    Normalize["Normalize event\nClaim duplicate key"]
+    Policy["Safeguards\nBlocked topics\nRate limit\nCache"]
+    Retrieve["Semantic retrieval\nConfidence threshold"]
+    Fallback["Approved keyword\nfallback"]
+    Reply["Threaded Slack reply"]
+    Notify["Admin notification\nUnanswered or limited"]
+    State["In-memory or\nUpstash Redis state"]
+
+    Sources -. "offline curation" .-> Curate
+    Curate -. "index build" .-> Index
+    Index --> Retrieve
+    Slack --> Normalize --> Policy
+    Policy <--> State
+    Policy --> Retrieve
+    Retrieve -->|confident| Reply
+    Retrieve -->|low confidence / missing index| Fallback --> Reply
+    Policy -->|blocked or rate limited| Reply
+    Policy -. "optional hook" .-> Notify
+```
+
+The solid arrows represent the online answering path. Dashed arrows represent
+offline curation, indexing, or optional notification work. The FAISS index is a
+persisted retrieval artifact; Redis is used for shared runtime state, not as a
+replacement for the reviewed knowledge source.
+
+## Is this an ETL or ELT project?
+
+It contains data-pipeline work, but it is not one single ETL or ELT pipeline.
+It has two offline ingestion pipelines and one online serving path.
+
+### Knowledge-base ingestion: ETL
+
+The spreadsheet path is best described as ETL:
+
+1. **Extract** rows from CSV, Excel exports, or Google Sheets.
+2. **Transform** headers, booleans, priorities, duplicate topics, disabled rows,
+   and validation errors.
+3. **Load** a validated JSON knowledge-base snapshot used by the answer service.
+
+### Slack question curation: ETL
+
+The scraper is also ETL:
+
+1. **Extract** messages and threads from selected Slack channels.
+2. **Transform** them into question-and-answer records, checkpoints, and review
+   exports.
+3. **Load** sanitized records for human review and later indexing.
+
+### Retrieval-index preparation: transform and load
+
+The index builder takes approved records, transforms text into embeddings, and
+loads the vectors plus document sidecar into a persisted FAISS index. This is a
+feature-indexing pipeline rather than a traditional analytics warehouse.
+
+### Online answering: serving, not ETL
+
+When a user asks a question, the service performs retrieval, policy checks,
+fallback selection, and response delivery. That is an online application flow,
+not ETL or ELT.
+
+The most accurate description is therefore: **a knowledge-support application
+with ETL ingestion pipelines and an online semantic-retrieval serving layer**.
+
+## Implemented capabilities
+
+| Capability | What it provides |
+| --- | --- |
+| Curated knowledge base | Maintainers control the answers that can be returned. |
+| Semantic retrieval | Related questions can find an approved answer even when wording differs. |
+| Keyword fallback | Known phrase matching remains available when retrieval is uncertain. |
+| Persistent index | FAISS vectors and records survive application restarts. |
+| Caching | Repeated semantic questions can reuse answers for seven days. |
+| Rate limiting | A user is limited to ten questions per hour by default. |
+| Blocked topics | Restricted questions cannot bypass policy through keyword fallback. |
+| Duplicate protection | Slack retries do not create duplicate threaded replies. |
+| Event-aware limits | A failed Slack delivery retry does not consume another rate-limit unit. |
+| Notifications | Unanswered and rate-limited questions can notify administrators. |
+| Platform boundary | Core services can be reused behind another delivery adapter. |
 
 ## Run locally
 
@@ -66,11 +195,23 @@ The complete current application configuration is:
 | `KB_STORAGE_PATH` | JSON snapshot path shared by the server and importer | `data/kb_topics.json` |
 | `HF_TOKEN` | Hugging Face token used by the offline index builder | Unset; index building fails |
 | `HF_EMBED_MODEL` | Hugging Face feature-extraction model | `sentence-transformers/all-mpnet-base-v2` |
+| `RAG_INDEX_PATH` | Persisted FAISS index path | `data/kb_index.faiss` |
+| `RAG_RECORDS_PATH` | Persisted retrieval-record sidecar path | `data/kb_index_records.json` |
+| `RAG_MIN_SIMILARITY` | Minimum semantic-match score | `0.6` |
+| `RAG_STATE_BACKEND` | Safeguard state backend: `memory`, `upstash`, or `none` | `memory` |
+| `UPSTASH_REDIS_REST_URL` | Upstash REST URL when the state backend is `upstash` | Unset |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash REST token when the state backend is `upstash` | Unset |
+| `SLACK_BOT_TOKEN` | Slack bot token for the configured Bolt app | Unset |
+| `SLACK_SIGNING_SECRET` | Slack request-signing secret for HTTP receivers | Unset |
+| `SLACK_BOT_USER_ID` | Bot user ID used to identify mentions and ignore bot messages | Unset |
+| `SLACK_ADMIN_CHANNEL` | Optional channel for unanswered and rate-limit notifications | Unset |
 
 The Google Sheets sync consumes `GOOGLE_SPREADSHEET_ID`,
 `GOOGLE_SERVICE_ACCOUNT_FILE` and `GOOGLE_SHEET_TABS` when invoked with
-`--google`. Slack configuration will be documented when Slack runtime wiring is
-implemented.
+`--google`. Slack runtime composition consumes the Slack and RAG variables above
+when a deployment calls `create_configured_slack_app(settings)`. The factory
+does not read `.env` files or perform a startup Slack `auth.test` call by
+default; the configured receiver still verifies signed incoming requests.
 Production may inject these variables directly and omit `--env-file`. Local
 `.env` files, credentials, data, notes and the roadmap are ignored; only the
 root `.env.example` template is intended for version control. Ignore rules do
@@ -140,10 +281,16 @@ payload, so Bolt deliveries use the message identity (`channel`, `ts`, `user`,
 and `text`) for deduplication.
 
 `create_slack_app` registers the narrow Slack Bolt event surface for this
-feature. Authentication and process transport are deployment concerns: provide
-Slack credentials through the runtime environment when wiring Socket Mode or an
-HTTP receiver. The in-memory duplicate store is appropriate for one process; a
-shared store is required before running multiple workers.
+feature. `create_configured_slack_app(settings)` composes the RAG service,
+configured state backend, optional administrator notifier, and authenticated
+Bolt app from an injected deployment mapping. The factory does not load `.env`
+files, choose a hosting platform, or perform a startup `auth.test` call by
+default. The configured receiver still verifies signed incoming requests.
+
+The in-memory duplicate and RAG state stores are appropriate for one process;
+shared stores are required before running multiple workers. Merge the event-aware
+rate-limit hardening before enabling the configured Slack runtime in production
+so a failed delivery retry cannot consume a second rate-limit unit.
 
 ## Spreadsheet knowledge base
 
