@@ -64,6 +64,13 @@ def test_runtime_config_rejects_unknown_state_backend():
         RagRuntimeConfig.from_mapping(settings)
 
 
+@pytest.mark.parametrize("value", ["-0.1", "1.1", "nan", "inf", "-inf"])
+def test_runtime_config_rejects_invalid_similarity_threshold(value):
+    """Reject thresholds outside the valid finite similarity range."""
+    with pytest.raises(ValueError, match="RAG_MIN_SIMILARITY"):
+        RagRuntimeConfig.from_mapping({"RAG_MIN_SIMILARITY": value})
+
+
 def test_memory_state_backend_is_available_for_local_development():
     """Use process-local state without requiring external credentials."""
     state = create_state_store(RagRuntimeConfig(state_backend="memory"))

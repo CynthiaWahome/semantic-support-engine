@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,8 @@ class RagRuntimeConfig:
             minimum_score = float(minimum_score_text)
         except ValueError as error:
             raise ValueError("RAG_MIN_SIMILARITY must be a number") from error
+        if not math.isfinite(minimum_score) or not 0.0 <= minimum_score <= 1.0:
+            raise ValueError("RAG_MIN_SIMILARITY must be between 0 and 1")
         state_backend = settings.get("RAG_STATE_BACKEND", "memory").strip().lower()
         if state_backend not in {"memory", "upstash", "none"}:
             raise ValueError("RAG_STATE_BACKEND must be memory, upstash, or none")
@@ -87,7 +90,12 @@ def create_rag_service(
     state: RagStateStore | None = None,
     notifier: RagAdminNotifier | None = None,
 ) -> RagKnowledgeBaseService:
-    """Compose semantic retrieval, keyword fallback, and optional safeguards."""
+    """Compose semantic retrieval, fallback, and optional safeguards.
+
+    When both ``config`` and ``state`` are omitted, local in-memory safeguards
+    are enabled. Passing ``state=None`` does not disable safeguards; use
+    ``RagRuntimeConfig(state_backend="none")`` to disable them explicitly.
+    """
     runtime_config = config or RagRuntimeConfig()
     keyword = keyword_service or get_knowledge_base_service()
     embedding_provider = embeddings or _create_embedding_provider(runtime_config)
@@ -118,5 +126,5 @@ def _create_embedding_provider(config: RagRuntimeConfig) -> EmbeddingProvider:
     """Create the configured hosted embedding provider without logging its token."""
     token = config.embedding_token or ""
     if not token:
-        raise ValueError("HF_TOKEN must be provided by the runtime environment")
+        raise ValueError("HF_TOKEN must be provided by the runtime configuration")
     return HuggingFaceEmbeddingProvider(token=token, model=config.embedding_model)
