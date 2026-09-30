@@ -2,6 +2,8 @@
 
 ETL pipeline and semantic-retrieval service for curated support answers.
 
+[![CI](https://github.com/CynthiaWahome/semantic-support-engine/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/CynthiaWahome/semantic-support-engine/actions/workflows/ci.yml)
+![License](https://img.shields.io/badge/License-MIT-green)
 ![Python](https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white&style=for-the-badge)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white&style=for-the-badge)
 ![Slack Bolt](https://img.shields.io/badge/Slack_Bolt-4A154B?logo=slack&logoColor=white&style=for-the-badge)
