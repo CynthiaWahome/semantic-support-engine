@@ -48,7 +48,7 @@ Delivery adapter
 
 The answering service is independent of the transport that delivered the
 question. Adapters normalize platform events into a question, user identity,
-channel, workspace, and request identity before calling the service.
+channel, and request identity before calling the service.
 
 ## Knowledge pipeline
 
