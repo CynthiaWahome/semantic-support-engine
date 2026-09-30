@@ -14,9 +14,9 @@ ETL pipeline and semantic-retrieval service for curated support answers.
 ## Problem
 
 Teams repeatedly answer the same questions, but the answers are scattered
-across spreadsheets, conversations, pinned messages, and internal documents.
-That creates duplicated effort, inconsistent guidance, and knowledge that is
-easy to lose.
+across conversations, pinned messages, internal documents, and disconnected
+team knowledge. That creates duplicated effort, inconsistent guidance, and
+knowledge that is easy to lose.
 
 ## Solution
 
@@ -100,19 +100,6 @@ uv run --no-sync ruff format --check .
 The automated suite uses synthetic fixtures and does not contact external
 Slack, Google, Hugging Face, or Upstash services.
 
-## Adapter boundary
-
-Delivery integrations live under `app/adapters/`. The current Slack Socket Mode
-runtime is documented in the [Slack runtime guide](docs/SLACK_RUNTIME.md).
-
-Adding Teams, Telegram, Zedu, or another interface should add an adapter and
-adapter-specific configuration without copying retrieval, fallback, caching,
-rate limiting, or policy logic into that adapter.
-
-The current implementation is single-workspace. Workspace-aware retrieval,
-tenant isolation, and service-to-service authentication are required before a
-multi-organisation deployment.
-
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
@@ -120,12 +107,6 @@ multi-organisation deployment.
 - [Data pipelines](docs/DATA_PIPELINES.md)
 - [Slack runtime](docs/SLACK_RUNTIME.md)
 - [Contributing](CONTRIBUTING.md)
-
-## Scope
-
-This repository focuses on knowledge ingestion, semantic retrieval, answer
-safeguards, and reusable delivery adapters. Platform-specific workflows belong
-in the applications that consume this service.
 
 ## License
 
