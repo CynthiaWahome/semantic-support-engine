@@ -1,14 +1,9 @@
 # Semantic Support Engine
 
-## From scattered team knowledge to answers people can trust.
+ETL pipeline and semantic-retrieval service for curated support answers.
 
-An ETL-backed semantic support engine that turns spreadsheets, reviewed
-question-and-answer records, and curated conversation history into searchable,
-policy-aware answers.
-
-Slack is the first delivery adapter. The answering core is designed to serve
-other team platforms without duplicating retrieval, fallback, or safety logic.
-
+[![CI](https://github.com/CynthiaWahome/semantic-support-engine/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/CynthiaWahome/semantic-support-engine/actions/workflows/ci.yml)
+![License](https://img.shields.io/badge/License-MIT-green)
 ![Python](https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white&style=for-the-badge)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white&style=for-the-badge)
 ![Slack Bolt](https://img.shields.io/badge/Slack_Bolt-4A154B?logo=slack&logoColor=white&style=for-the-badge)
@@ -18,59 +13,65 @@ other team platforms without duplicating retrieval, fallback, or safety logic.
 ![Pytest](https://img.shields.io/badge/Pytest-0A9EDC?logo=pytest&logoColor=white&style=for-the-badge)
 ![Ruff](https://img.shields.io/badge/Ruff-D7FF64?logo=ruff&logoColor=black&style=for-the-badge)
 
-## The problem
+## Problem
 
 Teams repeatedly answer the same questions, but the answers are scattered
-across spreadsheets, conversations, pinned messages, and internal documents.
-That creates duplicated effort, inconsistent guidance, and knowledge that is
-easy to lose.
+across conversations, pinned messages, internal documents, and disconnected
+team knowledge. That creates duplicated effort, inconsistent guidance, and
+knowledge that is easy to lose.
 
-## The solution
+## Solution
 
-Support Answering Platform creates a controlled path from knowledge to answer:
+Semantic Support Engine creates a controlled path from knowledge to answer:
 
 ```text
-Ingest → validate → index → retrieve → safeguard → answer
+Ingest → validate → curate → index → retrieve → safeguard → answer
 ```
 
-It searches approved knowledge first, preserves known keyword answers when
-semantic confidence is low, and applies policy checks before anything is sent
-back to the user.
-
-## Built for grounded answers, not plausible guesses
-
-- **A real ETL pipeline** — structured knowledge is extracted, transformed,
-  validated, reviewed, and loaded into serving artifacts.
-- **Controlled retrieval** — semantic search is backed by approved records and
-  an explicit confidence threshold.
-- **Safe fallback behavior** — uncertain questions use existing approved answers
-  instead of unsupported generated responses.
-- **Policy-aware delivery** — blocked topics, rate limits, caching, notifications,
-  and duplicate-event protection run inside the answer path.
-- **Reusable core services** — Slack is an adapter, not the source of the
-  retrieval or policy logic.
+Curated knowledge is searched first through semantic retrieval. When the
+semantic match is unavailable or below the configured confidence threshold, the
+service preserves deterministic keyword fallback behavior.
 
 ## Architecture
 
 ```text
 Knowledge sources
       ↓
-ETL and curation
+ETL and review
       ↓
 Semantic index + approved answers
       ↓
 Answer service and safeguards
       ↓
-Slack thread today · other adapters later
+Delivery adapter
 ```
 
-## Read the engineering
+The answering service is independent of the transport that delivered the
+question. Adapters normalize platform events into a question, user identity,
+channel, and request identity before calling the service.
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Data pipelines](docs/DATA_PIPELINES.md)
-- [Configuration](docs/CONFIGURATION.md)
+## Knowledge pipeline
 
-## See it running locally
+The system has two related knowledge paths:
+
+1. Curated spreadsheet records provide trusted keyword answers and fallback
+   behavior.
+2. Scraped and reviewed conversation records provide approved input for the
+   semantic index.
+
+The scraper extracts question-and-answer candidates from selected conversation
+history and produces local JSON and Excel review exports. Review and
+sanitization happen before records are supplied to the index builder.
+
+The current semantic index uses Hugging Face embeddings, normalized vectors,
+FAISS inner-product search, and a JSON record sidecar. Index rebuilding is a
+manual operation:
+
+```text
+Update knowledge → sync or curate → rebuild index → restart serving process
+```
+
+## Local development
 
 Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
 
@@ -79,13 +80,18 @@ git clone https://github.com/CynthiaWahome/semantic-support-engine.git
 cd semantic-support-engine
 uv sync --locked
 cp -n .env.example .env
+```
+
+Start the HTTP application:
+
+```sh
 uv run --env-file .env --no-sync uvicorn app.main:app --reload
 ```
 
-The API runs at `http://127.0.0.1:8000`; interactive documentation is available
-at `/docs`.
+The API is available at `http://127.0.0.1:8000`; interactive documentation is
+available at `/docs`.
 
-Run the quality checks:
+## Tests
 
 ```sh
 uv run --no-sync pytest
@@ -93,10 +99,17 @@ uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
 ```
 
-## Contribute or adapt the platform
+The automated suite uses synthetic fixtures and does not contact external
+Slack, Google, Hugging Face, or Upstash services.
 
-The answering core is designed to be reused beyond Slack. New delivery
-adapters can normalize their platform's events into the existing service
-boundary without duplicating retrieval or policy logic. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for branch, commit, and pull-request
-conventions.
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Data pipelines](docs/DATA_PIPELINES.md)
+- [Slack runtime](docs/SLACK_RUNTIME.md)
+- [Contributing](CONTRIBUTING.md)
+
+## License
+
+This project is available under the [MIT License](LICENSE).
